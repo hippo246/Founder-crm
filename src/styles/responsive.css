@@ -1,0 +1,71 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   FOUNDER OS — Responsive breakpoints
+══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Tablet (≤1024px) ───────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .page-content { padding: 20px 20px; }
+  .stat-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .section-three-col { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Mobile (≤768px) ────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar { display: none !important; }
+  .mobile-menu-btn { display: flex !important; }
+
+  .page-content { padding: 14px 14px; padding-bottom: 80px !important; }
+  .module-header { gap: 8px; }
+  .module-header-left h2 { font-size: 18px; }
+  .module-header-actions { width: 100%; }
+
+  .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+  .stat-card-value { font-size: 20px; }
+
+  .data-table-wrap { overflow-x: auto; }
+  .kanban-board { min-width: 600px; }
+  .filter-bar { gap: 6px; }
+
+  .modal-box { border-radius: var(--r-lg); }
+  .modal-body { padding: 14px 16px 18px; }
+  .modal-header { padding: 16px 16px 0; }
+
+  .topbar { padding: 0 14px; gap: 8px; }
+  .topbar-search { max-width: 180px; font-size: 12px; padding: 5px 10px; }
+
+  .section-two-col   { grid-template-columns: 1fr !important; }
+  .section-three-col { grid-template-columns: 1fr !important; }
+
+  .hide-mobile { display: none !important; }
+}
+
+/* ── Small mobile (≤480px) ──────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .page-content { padding: 10px 10px; padding-bottom: 80px !important; }
+
+  .modal-overlay { padding: 8px; align-items: flex-end; }
+  .modal-box {
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    max-height: 94vh;
+  }
+  .topbar-search { display: none; }
+  .module-header-actions .btn { flex: 1; justify-content: center; }
+}
+
+/* ── Ultrawide (≥1600px) ────────────────────────────────────────────────── */
+@media (min-width: 1600px) {
+  .page-content { padding: 28px 40px; }
+  .stat-grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+}
+
+/* ── Mobile bottom nav ──────────────────────────────────────────────────── */
+.mobile-nav-bar {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--surface); border-top: 1px solid var(--border);
+  z-index: 100; padding-bottom: env(safe-area-inset-bottom, 0);
+}
+@media (max-width: 768px) {
+  .mobile-nav-bar { display: flex; }
+}

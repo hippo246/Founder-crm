@@ -1,0 +1,113 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   FOUNDER OS — Theme tokens
+   Dark is the default. Light overrides via [data-theme="light"].
+══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Backgrounds ──────────────────────────────────────────────────────── */
+  --bg:              #080C14;
+  --surface:         #0E1420;
+  --surface-raised:  #131B2A;
+  --surface-overlay: #192033;
+  --surface-hover:   rgba(255,255,255,0.04);
+  --sidebar-bg:      #060A10;
+
+  /* ── Text ─────────────────────────────────────────────────────────────── */
+  --text:            #E8EEFF;
+  --text-muted:      #5A6A8A;
+  --text-subtle:     #2D3A52;
+  --text-secondary:  #8899BB;
+
+  /* ── Borders ──────────────────────────────────────────────────────────── */
+  --border:          rgba(255,255,255,0.06);
+  --border-strong:   rgba(255,255,255,0.11);
+  --border-focus:    rgba(59,130,246,0.6);
+
+  /* ── Accent ───────────────────────────────────────────────────────────── */
+  --accent:          #3B82F6;
+  --accent-hover:    #2563EB;
+  --accent-dim:      rgba(59,130,246,0.15);
+  --accent-glow:     0 0 20px rgba(59,130,246,0.2);
+  --accent-border:   rgba(59,130,246,0.35);
+
+  /* ── Semantic ─────────────────────────────────────────────────────────── */
+  --success:         #10B981;
+  --success-dim:     rgba(16,185,129,0.12);
+  --warning:         #F59E0B;
+  --warning-dim:     rgba(245,158,11,0.12);
+  --danger:          #EF4444;
+  --danger-dim:      rgba(239,68,68,0.12);
+  --info:            #38BDF8;
+  --info-dim:        rgba(56,189,248,0.12);
+  --purple:          #8B5CF6;
+  --purple-dim:      rgba(139,92,246,0.12);
+
+  /* ── Shadows ──────────────────────────────────────────────────────────── */
+  --shadow-xs:       0 1px 4px rgba(0,0,0,0.4);
+  --shadow-sm:       0 2px 8px rgba(0,0,0,0.5);
+  --shadow-md:       0 6px 20px rgba(0,0,0,0.55);
+  --shadow-lg:       0 16px 48px rgba(0,0,0,0.65);
+  --shadow-xl:       0 24px 64px rgba(0,0,0,0.75);
+
+  /* ── Radius ───────────────────────────────────────────────────────────── */
+  --r-xs:   4px;
+  --r-sm:   6px;
+  --r-md:   10px;
+  --r-lg:   14px;
+  --r-xl:   18px;
+  --r-2xl:  24px;
+  --r-pill: 999px;
+
+  /* ── Input & Modal ────────────────────────────────────────────────────── */
+  --input-bg:    rgba(255,255,255,0.04);
+  --modal-bg:    #111827;
+  --stripe:      rgba(255,255,255,0.018);
+
+  /* ── Sidebar ──────────────────────────────────────────────────────────── */
+  --nav-active-bg:     rgba(59,130,246,0.14);
+  --nav-active-border: #3B82F6;
+  --nav-hover-bg:      rgba(255,255,255,0.04);
+
+  /* Legacy aliases for backwards compat */
+  --card-bg: var(--surface);
+  --radius-sm:  var(--r-sm);
+  --radius-md:  var(--r-md);
+  --radius-lg:  var(--r-lg);
+  --radius-xl:  var(--r-xl);
+  --radius-pill: var(--r-pill);
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+}
+
+/* ── Light theme overrides ──────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:              #F0F4FA;
+  --surface:         #FFFFFF;
+  --surface-raised:  #F7F9FC;
+  --surface-overlay: #EEF2F8;
+  --surface-hover:   rgba(0,0,0,0.025);
+  --sidebar-bg:      #0D1117;
+
+  --text:            #0D1421;
+  --text-muted:      #64748B;
+  --text-subtle:     #B0BFCF;
+  --text-secondary:  #4A5568;
+
+  --border:          rgba(0,0,0,0.07);
+  --border-strong:   rgba(0,0,0,0.12);
+
+  --shadow-xs:       0 1px 4px rgba(0,0,0,0.05);
+  --shadow-sm:       0 2px 8px rgba(0,0,0,0.07);
+  --shadow-md:       0 6px 20px rgba(0,0,0,0.09);
+  --shadow-lg:       0 16px 48px rgba(0,0,0,0.12);
+  --shadow-xl:       0 24px 64px rgba(0,0,0,0.16);
+
+  --input-bg:        #FFFFFF;
+  --modal-bg:        #FFFFFF;
+  --stripe:          rgba(0,0,0,0.016);
+
+  --nav-active-bg:     rgba(59,130,246,0.1);
+}
