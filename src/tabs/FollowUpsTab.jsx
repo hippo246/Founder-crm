@@ -65,6 +65,7 @@ const FollowUpForm = ({ initial = {}, onSave, onClose, contacts, leads, projects
 
 export default function FollowUpsTab({ followUps, setFollowUps, addAudit, role, contacts, leads, projects, tasks, setTasks, calendarEvents, setCalendarEvents , workspaceId = "workspace-1" , onLinkedSave}) {
 
+  const [view, setView] = useState("cards");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterType, setFilterType] = useState("All");
@@ -134,8 +135,18 @@ export default function FollowUpsTab({ followUps, setFollowUps, addAudit, role, 
               : <>{(followUps||[]).length} total</>}
           </p>
         </div>
-        <div style={{ display:"flex", gap:"8px" }}>
-          <button style={btnStyle("ghost", "sm")} onClick={handleExport}>Export CSV</button>
+        <div style={{ display:"flex", gap:"8px", alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: 2, gap: 2 }}>
+            <button
+              style={{ padding: "5px 14px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "background 0.15s, color 0.15s", background: view === "cards" ? "var(--primary,#6366f1)" : "transparent", color: view === "cards" ? "#fff" : "var(--text-muted)" }}
+              onClick={() => setView("cards")}
+            >⊞ Cards</button>
+            <button
+              style={{ padding: "5px 14px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "background 0.15s, color 0.15s", background: view === "table" ? "var(--primary,#6366f1)" : "transparent", color: view === "table" ? "#fff" : "var(--text-muted)" }}
+              onClick={() => setView("table")}
+            >≡ Table</button>
+          </div>
+          <button style={btnStyle("ghost", "sm")} onClick={handleExport}>↓ Export</button>
           {role !== "Viewer" && <button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Add follow-up</button>}
         </div>
       </div>
@@ -162,46 +173,79 @@ export default function FollowUpsTab({ followUps, setFollowUps, addAudit, role, 
         <select style={{ ...inputStyle, width: "auto" }} value={filterStatus} onChange={e => { setFilterStatus(e.target.value); if (e.target.value !== "All") setViewFilter("All"); }}><option value="All">All statuses</option>{FU_STATUSES.map(s => <option key={s}>{s}</option>)}</select>
         <select style={{ ...inputStyle, width: "auto" }} value={filterType} onChange={e => { setFilterType(e.target.value); if (e.target.value !== "All") setViewFilter("All"); }}><option value="All">All types</option>{FU_TYPES.map(t => <option key={t}>{t}</option>)}</select>
       </div>
-      {filtered.length === 0 ? <EmptyState icon="📞" title={(followUps||[]).length > 0 ? "No results" : "No follow-ups"} sub={(followUps||[]).length > 0 ? "Try adjusting your filters or search." : "Stay on top of your outreach."} action={(followUps||[]).length === 0 && <button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Add follow-up</button>} /> : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {filtered.length === 0 ? <EmptyState icon="📞" title={(followUps||[]).length > 0 ? "No results" : "No follow-ups"} sub={(followUps||[]).length > 0 ? "Try adjusting your filters or search." : "Stay on top of your outreach."} action={(followUps||[]).length === 0 && <button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Add follow-up</button>} /> : view === "cards" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
           {filtered.map(fu => {
             const overdue = fu.dueDate && isOverdue(fu.dueDate) && fu.status === "Pending";
             return (
-              <div key={fu.id} style={{ background: "var(--surface)", border: `1px solid ${overdue?"#FCA5A5":fu.status==="Done"?"var(--border)":"var(--border)"}`, borderLeft: `3px solid ${overdue?"#EF4444":fu.status==="Done"?"#10B981":fu.status==="Missed"?"#F59E0B":"var(--accent)"}`, borderRadius: 12, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{fu.person || "—"}</span>
-                    <Badge label={fu.status} />
+              <div key={fu.id} style={{ background: "var(--surface)", border: `1px solid ${overdue?"#FCA5A5":fu.status==="Done"?"var(--border)":"var(--border)"}`, borderLeft: `3px solid ${overdue?"#EF4444":fu.status==="Done"?"#10B981":fu.status==="Missed"?"#F59E0B":"var(--accent)"}`, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fu.person || "—"}</span>
+                      <Badge label={fu.status} />
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: fu.notes||fu.outcome ? 6 : 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {fu.type} · {fu.relatedTo || "—"}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: fu.notes||fu.outcome ? 6 : 0 }}>
-                    {fu.type} · {fu.relatedTo || "—"} · Due: <span style={{ color: overdue?"#DC2626":"var(--text-muted)", fontWeight: overdue?600:400 }}>{fmtDate(fu.dueDate)}{overdue&&" ⏰"}</span>
-                  </div>
-                  {fu.notes && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: fu.outcome ? 3 : 0 }}>{fu.notes}</div>}
-                  {fu.outcome && <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>💬 {fu.outcome}</div>}
                 </div>
+                
+                <div style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "var(--text-muted)" }}>Due:</span>
+                  <span style={{ color: overdue?"#DC2626":"var(--text)", fontWeight: overdue?600:500, background: overdue?"#FEE2E2":"var(--border)", padding: "2px 6px", borderRadius: 4 }}>{fmtDate(fu.dueDate)}{overdue&&" ⏰"}</span>
+                </div>
+
+                {fu.notes && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: fu.outcome ? 3 : 0, background: "var(--background)", padding: 8, borderRadius: 6, border: "1px solid var(--border)" }}>{fu.notes}</div>}
+                {fu.outcome && <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", background: "#f0fdf4", padding: 8, borderRadius: 6, border: "1px solid #bbf7d0" }}>💬 {fu.outcome}</div>}
+                
                 {role !== "Viewer" && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-end" }}>
-                    {/* Primary actions */}
-                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: "auto", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-start" }}>
                       {fu.status !== "Done" && <button style={{ ...btnStyle("ghost","sm"), color:"var(--success)" }} onClick={() => markStatus(fu.id, "Done")}>✓ Done</button>}
                       {fu.status === "Pending" && <button style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => markStatus(fu.id, "Missed")}>Missed</button>}
                       {(fu.status === "Missed" || fu.status === "Rescheduled") && <button style={{ ...btnStyle("ghost","sm"), color:"var(--accent)" }} onClick={() => markStatus(fu.id, "Pending")}>↩ Reopen</button>}
-                      <button style={btnStyle("ghost","sm")} onClick={() => setEditing(fu)}>Edit</button>
+                      <button style={{ ...btnStyle("ghost","sm"), marginLeft: "auto" }} onClick={() => setEditing(fu)}>Edit</button>
                       {(role==="Owner"||role==="Admin") && <button style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => setConfirm(fu.id)}>Del</button>}
-                    </div>
-                    {/* Secondary actions */}
-                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      <button style={{ ...btnStyle("ghost","sm"), fontSize: 10 }} onClick={() => createTask(fu)}>+ Task</button>
-                      <button style={{ ...btnStyle("ghost","sm"), fontSize: 10 }} onClick={() => createCalEvent(fu)}>+ Event</button>
-                      {onLinkedSave && (
-                        <button style={{ ...btnStyle("ghost","sm"), fontSize: 10 }} onClick={() => onLinkedSave("note",{title:`Note — ${fu.person}`,relatedTo:fu.relatedTo||fu.person,relatedType:"Follow-Up",body:fu.notes||"",tags:[]})}>📝 Note</button>
-                      )}
                     </div>
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "var(--surface)", borderBottom: "2px solid var(--border)" }}>
+                <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Person</th>
+                <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Type & Related</th>
+                <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Due Date</th>
+                <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Status</th>
+                <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(fu => {
+                const overdue = fu.dueDate && isOverdue(fu.dueDate) && fu.status === "Pending";
+                return (
+                  <tr key={fu.id} style={{ borderBottom: "1px solid var(--border)", transition: "background 0.1s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--surface)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "11px 14px", fontWeight: 600, color: "var(--text)" }}>{fu.person}</td>
+                    <td style={{ padding: "11px 14px", color: "var(--text-muted)" }}>{fu.type} · {fu.relatedTo}</td>
+                    <td style={{ padding: "11px 14px", color: overdue?"#DC2626":"var(--text-muted)", fontWeight: overdue?600:400 }}>{fmtDate(fu.dueDate)}{overdue&&" ⏰"}</td>
+                    <td style={{ padding: "11px 14px" }}><Badge label={fu.status} /></td>
+                    <td style={{ padding: "11px 14px" }}>
+                      <div style={{ display: "flex", gap: 5 }}>
+                        {role !== "Viewer" && <button style={{ ...btnStyle("ghost", "sm"), fontSize: 11 }} onClick={() => setEditing(fu)}>Edit</button>}
+                        {(role === "Owner" || role === "Admin") && <button style={{ fontSize: 11, padding: "3px 8px", border: "none", borderRadius: 6, background: "#fee2e2", color: "#991b1b", cursor: "pointer", fontWeight: 600 }} onClick={() => setConfirm(fu.id)}>Del</button>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

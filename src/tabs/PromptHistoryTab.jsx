@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Badge, Modal, Confirm, FormField, SearchInput, EmptyState, btnStyle, inputStyle, toast } from "../components/ui/UI.jsx";
 import { genId, fmtDate } from "../lib/helpers.js";
 import { saveWorkspaceData } from "../lib/storage.js";
@@ -113,45 +114,121 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
 
   const handleExport = useCallback(() => { exportToCSV("prompt-history", filtered); toast("Prompt history exported to CSV"); }, [filtered]);
 
-  const renderPromptCard = useCallback(p => {
+  const onDragEnd = useCallback((result) => {
+    if(!result.destination) return;
+    const { draggableId, destination, source } = result;
+    if(destination.droppableId === source.droppableId && destination.index === source.index) return;
+    
+    // Status change
+    markStatus(draggableId, destination.droppableId);
+  }, [markStatus]);
+
+  const renderPromptCard = useCallback((p, index) => {
     const rmItem = p.linkedRoadmapItemId && (roadmapItems||[]).find(r=>r.id===p.linkedRoadmapItemId);
     const linkedTask = p.linkedTaskId && (tasks||[]).find(t=>t.id===p.linkedTaskId);
-    return (
-      <div key={p.id} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--r-md)",padding:"13px 15px",marginBottom:8}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:6}}>
+    const content = (
+      <div key={p.id} style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderLeft: `4px solid ${p.status==="Applied" ? "var(--success)" : p.status==="Needs Fix" ? "var(--danger)" : "var(--accent)"}`,
+        borderRadius: "var(--r-md)",
+        padding: "16px",
+        marginBottom: 12,
+        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+        transition: "transform 0.15s, box-shadow 0.15s"
+      }}
+      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 16px rgba(0,0,0,0.08)"; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)"; }}>
+        
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:10}}>
           <div>
-            <div style={{fontWeight:600,fontSize:13,color:"var(--text)"}}><span style={{color:"var(--text-muted)",marginRight:6}}>#{p.promptNumber}</span>{p.title}</div>
-            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>{p.tool} · {p.project||"—"} · {p.moduleFile} · {fmtDate(p.date)}{p.resultQuality>0&&` · ⭐${p.resultQuality}/5`}</div>
+            <div style={{fontWeight:700,fontSize:15,color:"var(--text)", letterSpacing:"-0.2px", marginBottom: 6}}>
+              <span style={{color:"var(--text-muted)",marginRight:6, fontWeight:500}}>#{p.promptNumber}</span>{p.title}
+            </div>
+            <div style={{fontSize:12,color:"var(--text-muted)",display:"flex", gap:8, flexWrap:"wrap"}}>
+              <span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>🤖 {p.tool}</span>
+              <span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>📁 {p.project||"—"}</span>
+              <span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>📄 {p.moduleFile}</span>
+              <span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>📅 {fmtDate(p.date)}</span>
+              {p.resultQuality>0&&<span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>⭐ {p.resultQuality}/5</span>}
+            </div>
           </div>
-          <div style={{display:"flex",gap:4}}><Badge label={p.status} size="sm" /></div>
+          <div style={{display:"flex",gap:6, background:"var(--surface-raised)", padding:"6px", borderRadius:"8px", border:"1px solid var(--border)"}}>
+            <Badge label={p.status} size="sm" />
+          </div>
         </div>
-        {(rmItem||linkedTask)&&<div style={{display:"flex",gap:8,fontSize:11,color:"var(--text-muted)",marginBottom:6}}>
+        
+        {(rmItem||linkedTask)&&<div style={{display:"flex",gap:10,fontSize:12,color:"var(--text-muted)",marginBottom:10, padding:"6px 12px", background:"var(--surface-raised)", borderRadius:"6px"}}>
           {rmItem&&<span>🗺️ {rmItem.item}</span>}
           {linkedTask&&<span>✅ {linkedTask.title}</span>}
         </div>}
-        {p.promptBody&&<div style={{background:"var(--input-bg)",border:"1px solid var(--border)",borderRadius:"var(--r-sm)",padding:"7px 10px",fontSize:11,color:"var(--text-muted)",fontFamily:"monospace",marginBottom:6,maxHeight:60,overflow:"hidden"}}>{p.promptBody.length>250?p.promptBody.slice(0,p.promptBody.lastIndexOf(" ",250)||250)+"…":p.promptBody}</div>}
-        {p.outputSummary&&<div style={{fontSize:12,color:"var(--text)",marginBottom:4}}>📤 {p.outputSummary}</div>}
-        {p.nextPromptNeeded&&<div style={{fontSize:11,color:"var(--accent)",marginBottom:6}}>→ Next: {p.nextPromptNeeded}</div>}
-        {p.tags?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>{p.tags.map(tag=><span key={tag} style={{fontSize:10,padding:"2px 7px",borderRadius:"var(--r-pill)",background:"var(--surface-raised)",color:"var(--text-muted)",border:"1px solid var(--border)"}}>{tag}</span>)}</div>}
+        
+        {p.promptBody&&<div style={{
+          background: "#1e1e1e",
+          border: "1px solid var(--border)",
+          borderRadius: "8px",
+          padding: "12px",
+          fontSize: 12,
+          color: "#d4d4d4",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+          marginBottom: 12,
+          maxHeight: 120,
+          overflowY: "auto",
+          lineHeight: 1.5,
+          position: "relative"
+        }}>
+          <div style={{position:"absolute", top:8, right:8, opacity:0.6, fontSize:10, userSelect:"none"}}>PROMPT</div>
+          <pre style={{margin:0, whiteSpace:"pre-wrap", fontFamily:"inherit"}}>{p.promptBody}</pre>
+        </div>}
+        
+        {p.outputSummary&&<div style={{fontSize:13,color:"var(--text)",marginBottom:8, padding:"8px 12px", background:"var(--background)", borderRadius:"6px", borderLeft:"2px solid var(--accent)"}}>
+          <strong>Output:</strong> {p.outputSummary}
+        </div>}
+        
+        {p.nextPromptNeeded&&<div style={{fontSize:12,color:"var(--accent)",marginBottom:10, fontWeight: 600}}>
+          → Next: {p.nextPromptNeeded}
+        </div>}
+        
+        {p.tags?.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          {p.tags.map(tag=><span key={tag} style={{fontSize:11,padding:"2px 10px",borderRadius:"12px",background:"var(--accent-dim)",color:"var(--accent)",border:"1px solid var(--accent-border)", fontWeight:500}}>#{tag}</span>)}
+        </div>}
+        
         {role!=="Viewer"&&(
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:4}}>
-            {p.promptBody&&<button style={btnStyle("soft","sm")} onClick={()=>copyPrompt(p.promptBody)}>📋 Copy</button>}
-            {p.status!=="Applied"&&<button style={{...btnStyle("ghost","sm"),color:"var(--success)"}} onClick={()=>markStatus(p.id,"Applied")}>✓ Applied</button>}
-            {p.status!=="Needs Fix"&&<button style={{...btnStyle("ghost","sm"),color:"var(--danger)"}} onClick={()=>markStatus(p.id,"Needs Fix")}>Needs Fix</button>}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10, paddingTop: 10, borderTop: "1px dashed var(--border)"}}>
+            {p.promptBody&&<button style={btnStyle("soft","sm")} onClick={()=>copyPrompt(p.promptBody)}>📋 Copy Prompt</button>}
+            {p.status!=="Applied"&&<button style={{...btnStyle("ghost","sm"),color:"var(--success)", background:"var(--success-dim)"}} onClick={()=>markStatus(p.id,"Applied")}>✓ Applied</button>}
+            {p.status!=="Needs Fix"&&<button style={{...btnStyle("ghost","sm"),color:"var(--danger)", background:"var(--danger-dim)"}} onClick={()=>markStatus(p.id,"Needs Fix")}>Needs Fix</button>}
             <button style={btnStyle("ghost","sm")} onClick={()=>createTask(p)}>+ Task</button>
             <button style={btnStyle("ghost","sm")} onClick={()=>duplicate(p)}>Duplicate</button>
             <button style={btnStyle("ghost","sm")} onClick={()=>setEditing(p)}>Edit</button>
             {(role==="Owner"||role==="Admin")&&<button style={{...btnStyle("ghost","sm"),color:"var(--danger)"}} onClick={()=>setConfirm({id:p.id,title:p.title})}>Delete</button>}
-            {onLinkedSave && <>
-              <span style={{width:1,background:"var(--border)",alignSelf:"stretch",margin:"0 2px"}} />
-              <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("task",{title:`[Prompt] ${p.title}`,project:p.project||"",status:"Todo",priority:"Medium",promptId:p.id})}>✅ Task</button>
-              <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("roadmapItem",{item:p.title,project:p.project||"",status:"Planned",priority:"Medium",notes:p.promptBody||""})}>🗺️ Roadmap</button>
-              <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("note",{title:`Note — ${p.title}`,relatedTo:p.project||p.title,relatedType:"Prompt",body:p.outputSummary||"",tags:[]})}>📝 Note</button>
-            </>}
           </div>
         )}
       </div>
     );
+    
+    if (typeof index === 'number') {
+      return (
+        <Draggable draggableId={p.id} index={index} key={p.id}>
+          {(provided, snapshot) => (
+            <div
+              ref={provided.innerRef}
+              {...provided.draggableProps}
+              {...provided.dragHandleProps}
+              style={{
+                ...provided.draggableProps.style,
+                opacity: snapshot.isDragging ? 0.8 : 1,
+                transform: snapshot.isDragging ? `${provided.draggableProps.style?.transform} scale(1.02)` : provided.draggableProps.style?.transform
+              }}
+            >
+              {content}
+            </div>
+          )}
+        </Draggable>
+      );
+    }
+    
+    return content;
   }, [role, roadmapItems, tasks, copyPrompt, markStatus, createTask, duplicate, onLinkedSave]);
 
   return (
@@ -195,22 +272,40 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
 
       {filtered.length===0?<EmptyState icon="🤖" title="No prompts" sub="Track every prompt you send to AI tools." action={<button style={btnStyle("primary")} onClick={()=>setShowForm(true)}>+ Add prompt</button>}/>:(
         viewMode==="kanban"?(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
-            {PROMPT_STATUSES.map(status=>{
-              const col = byStatus?.[status]||[];
-              return (
-                <div key={status} style={{background:"var(--surface-raised)",borderRadius:"var(--r-lg)",padding:12,border:"1px solid var(--border)"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,padding:"8px 10px",background:"var(--surface)",borderRadius:"var(--r-md)"}}>
-                    <span style={{fontWeight:700,fontSize:12,color:"var(--text)"}}>{status}</span>
-                    <span style={{fontSize:11,color:"var(--text-muted)",background:"var(--surface-raised)",padding:"2px 8px",borderRadius:"var(--r-pill)"}}>{col.length}</span>
+          <DragDropContext onDragEnd={onDragEnd}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+              {PROMPT_STATUSES.map(status=>{
+                const col = byStatus?.[status]||[];
+                return (
+                  <div key={status} style={{background:"var(--surface-raised)",borderRadius:"var(--r-lg)",padding:12,border:"1px solid var(--border)", display: "flex", flexDirection: "column"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,padding:"8px 10px",background:"var(--surface)",borderRadius:"var(--r-md)", flexShrink: 0}}>
+                      <span style={{fontWeight:700,fontSize:12,color:"var(--text)"}}>{status}</span>
+                      <span style={{fontSize:11,color:"var(--text-muted)",background:"var(--surface-raised)",padding:"2px 8px",borderRadius:"var(--r-pill)"}}>{col.length}</span>
+                    </div>
+                    <Droppable droppableId={status}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                          style={{
+                            display:"flex",flexDirection:"column",gap:8,
+                            minHeight: 150,
+                            flex: 1,
+                            background: snapshot.isDraggingOver ? "rgba(255,255,255,0.02)" : "transparent",
+                            borderRadius: "var(--r-md)",
+                            transition: "background 0.2s ease"
+                          }}
+                        >
+                          {col.map((p, index)=>renderPromptCard(p, index))}
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
                   </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {col.map(p=>renderPromptCard(p))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </DragDropContext>
         ) : viewMode==="sequence"&&byProject ? (
           Object.entries(byProject).map(([proj,items])=>(
             <div key={proj} style={{marginBottom:20}}>

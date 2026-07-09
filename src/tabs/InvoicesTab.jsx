@@ -11,6 +11,7 @@ import { INVOICE_STATUSES, STATUS_COLORS } from "../config/crmConfig.js";
 
 export default function InvoicesTab({ invoices, setInvoices, addAudit, role, projects, contacts, settings, payments, setPayments, workspaceId = "workspace-1" , onLinkedSave}) {
 
+  const [view, setView] = useState("table");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterProject, setFilterProject] = useState("All");
@@ -1037,8 +1038,18 @@ export default function InvoicesTab({ invoices, setInvoices, addAudit, role, pro
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--text)" }}>Invoices</h2>
           <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>{(invoices||[]).length} invoices • Manage billing and payments</p>
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button data-testid="invoice-export-csv" style={btnStyle("ghost", "sm")} onClick={handleExport}>Export CSV</button>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: 2, gap: 2 }}>
+            <button
+              style={{ padding: "5px 14px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "background 0.15s, color 0.15s", background: view === "cards" ? "var(--primary,#6366f1)" : "transparent", color: view === "cards" ? "#fff" : "var(--text-muted)" }}
+              onClick={() => setView("cards")}
+            >⊞ Cards</button>
+            <button
+              style={{ padding: "5px 14px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "background 0.15s, color 0.15s", background: view === "table" ? "var(--primary,#6366f1)" : "transparent", color: view === "table" ? "#fff" : "var(--text-muted)" }}
+              onClick={() => setView("table")}
+            >≡ Table</button>
+          </div>
+          <button data-testid="invoice-export-csv" style={btnStyle("ghost", "sm")} onClick={handleExport}>↓ Export</button>
           {(role === "Owner" || role === "Admin") && (
             <button data-testid="invoice-create" style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Create Invoice</button>
           )}
@@ -1072,7 +1083,7 @@ export default function InvoicesTab({ invoices, setInvoices, addAudit, role, pro
         </select>
       </div>
 
-      {/* Invoices Table */}
+      {/* Invoices Table / Cards */}
       {filtered.length === 0 ? (
         <EmptyState 
           icon="🧾" 
@@ -1082,6 +1093,40 @@ export default function InvoicesTab({ invoices, setInvoices, addAudit, role, pro
             <button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Create Invoice</button>
           )} 
         />
+      ) : view === "cards" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+          {filtered.map((inv) => {
+            const paid = getInvoicePaid[inv.id] || 0;
+            const pending = getInvoicePending(inv);
+            const isOverdueInv = inv.status === "Overdue";
+            return (
+              <div key={inv.id} style={{ background: "var(--surface)", border: `1px solid ${isOverdueInv?"#FCA5A5":inv.status==="Paid"?"var(--success)":"var(--border)"}`, borderLeft: `3px solid ${isOverdueInv?"#EF4444":inv.status==="Paid"?"#10B981":inv.status==="Draft"?"#9CA3AF":"var(--accent)"}`, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                      <button style={{ background: "none", border: "none", color: "var(--text)", fontWeight: 600, fontSize: 14, cursor: "pointer", padding: 0 }} onClick={() => setDetailView(inv)}>{inv.invoiceNumber}</button>
+                      <Badge label={inv.status} color={STATUS_COLORS[inv.status]} />
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.clientName || "—"} {inv.projectName ? `· ${inv.projectName}` : ""}</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--background)", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
+                  <div><div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Total</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{inv.currency === "INR" ? "INR" : "$"}{Number(inv.grandTotal || 0).toFixed(2)}</div></div>
+                  <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Pending</div><div style={{ fontSize: 13, fontWeight: 700, color: pending > 0 ? "var(--warning)" : "var(--success)" }}>{inv.currency === "INR" ? "INR" : "$"}{Number(pending).toFixed(2)}</div></div>
+                </div>
+                <div style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "var(--text-muted)" }}>Due:</span>
+                  <span style={{ color: isOverdueInv?"#DC2626":"var(--text)", fontWeight: isOverdueInv?600:500 }}>{inv.dueDate ? fmtDate(inv.dueDate) : "—"}{isOverdueInv&&" ⏰"}</span>
+                </div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                  <button style={btnStyle("ghost", "sm")} onClick={() => handlePrintInvoice(inv)}>🖨️ Print</button>
+                  <button style={btnStyle("ghost", "sm")} onClick={() => setDetailView(inv)}>📄 View</button>
+                  {(role === "Owner" || role === "Admin") && (<><button style={btnStyle("ghost", "sm")} onClick={() => setEditing(inv)}>Edit</button><button style={{ ...btnStyle("ghost", "sm"), color: "var(--danger)" }} onClick={() => setConfirm(inv.id)}>Del</button></>)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <div data-testid="invoice-table" style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import { Modal, Confirm, SearchInput, EmptyState, SectionCard, StatMini, btnStyle, toast } from "../../components/ui/UI.jsx";
 import { genId, isOverdue } from "../../lib/helpers.js";
 import { saveWorkspaceData } from "../../lib/storage.js";
@@ -19,7 +20,7 @@ export default function TasksTab({ tasks, setTasks, projects, contacts, roadmapI
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
 
-  const TASK_VIEWS = ["My Day", "Kanban", "By Project", "By Roadmap", "Blocked", "Completed", "All Tasks"];
+  const TASK_VIEWS = ["My Day", "Kanban", "By Project", "By Roadmap", "Blocked", "Completed", "All Tasks", "Table"];
 
   const filtered = useMemo(() => {
     if (!search) return tasks;
@@ -81,13 +82,16 @@ export default function TasksTab({ tasks, setTasks, projects, contacts, roadmapI
     addAudit("Tasks", "Status Change", `Task status changed to ${newStatus}`);
   };
 
-  const handleDrop = (e, col) => {
-    e.preventDefault();
-    setDragOverCol(null);
-    const taskId = e.dataTransfer.getData("taskId");
-    if (taskId) {
-      handleStatusChange(taskId, col);
-    }
+  const onDragEnd = (result) => {
+    const { source, destination, draggableId } = result;
+    if (!destination) return;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+    const newStatus = destination.droppableId;
+    const t = tasks.find(x => x.id === draggableId);
+    if (!t || t.status === newStatus) return;
+
+    handleStatusChange(draggableId, newStatus);
   };
 
   const handleExport = () => {
@@ -161,23 +165,49 @@ export default function TasksTab({ tasks, setTasks, projects, contacts, roadmapI
       {activeView === "Kanban" && (
         filtered.length === 0
           ? <EmptyState message={search ? "No tasks found" : "No tasks yet"} />
-          : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 4 }}>
-              {KANBAN_COLS.map(col => (
-                <SectionCard key={col} style={{ background: dragOverCol===col ? "var(--accent-dim)" : "var(--surface-raised)", minHeight:350 }}
-                  onDragOver={e => handleDragOver(e, col, setDragOverCol)}
-                  onDragEnter={e => handleDragEnter(e, col, setDragOverCol)}
-                  onDragLeave={e => handleDragLeave(e, setDragOverCol)}
-                  onDrop={e => handleDrop(e, col)}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-                    <span style={{ fontWeight:700, fontSize:12, color:"var(--text)" }}>{col}</span>
-                    <span style={{ fontSize:11, color:"var(--text-muted)" }}>{grouped[col]?.length||0}</span>
-                  </div>
-                  {(grouped[col]||[]).map(task => (
-                    <TaskCard key={task.id} task={task} onEdit={() => { setEditing(task); setShowAdd(true); }} onDelete={() => setConfirmDelete(task)} onStatusChange={handleStatusChange} role={role} roadmapItems={roadmapItems} supportTickets={supportTickets} onLinkedSave={onLinkedSave} />
-                  ))}
-                </SectionCard>
-              ))}
-            </div>
+          : <DragDropContext onDragEnd={onDragEnd}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 4 }}>
+                {KANBAN_COLS.map(col => (
+                  <Droppable droppableId={col} key={col}>
+                    {(provided, snapshot) => (
+                      <SectionCard 
+                        style={{ 
+                          background: snapshot.isDraggingOver ? "var(--accent-dim)" : "var(--surface-raised)", 
+                          minHeight:350,
+                          transition: "background 0.2s"
+                        }}
+                      >
+                        <div 
+                          ref={provided.innerRef} 
+                          {...provided.droppableProps}
+                          style={{ minHeight: "100%", paddingBottom: 20 }}
+                        >
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                            <span style={{ fontWeight:700, fontSize:12, color:"var(--text)" }}>{col}</span>
+                            <span style={{ fontSize:11, color:"var(--text-muted)" }}>{grouped[col]?.length||0}</span>
+                          </div>
+                          {(grouped[col]||[]).map((task, index) => (
+                            <TaskCard 
+                              key={task.id} 
+                              task={task} 
+                              index={index}
+                              onEdit={() => { setEditing(task); setShowAdd(true); }} 
+                              onDelete={() => setConfirmDelete(task)} 
+                              onStatusChange={handleStatusChange} 
+                              role={role} 
+                              roadmapItems={roadmapItems} 
+                              supportTickets={supportTickets} 
+                              onLinkedSave={onLinkedSave} 
+                            />
+                          ))}
+                          {provided.placeholder}
+                        </div>
+                      </SectionCard>
+                    )}
+                  </Droppable>
+                ))}
+              </div>
+            </DragDropContext>
       )}
 
       {/* BY PROJECT */}
@@ -260,8 +290,45 @@ export default function TasksTab({ tasks, setTasks, projects, contacts, roadmapI
       {activeView === "All Tasks" && (
         filtered.length === 0
           ? <EmptyState icon="✅" title="No tasks" sub="All tasks appear here." />
-          : <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
               {filtered.map(t => <TaskCard key={t.id} task={t} onEdit={() => { setEditing(t); setShowAdd(true); }} onDelete={() => setConfirmDelete(t)} onStatusChange={handleStatusChange} role={role} roadmapItems={roadmapItems} supportTickets={supportTickets} onLinkedSave={onLinkedSave} />)}
+            </div>
+      )}
+
+      {/* TABLE */}
+      {activeView === "Table" && (
+        filtered.length === 0
+          ? <EmptyState icon="✅" title="No tasks" sub="All tasks appear here." />
+          : <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "var(--surface)", borderBottom: "2px solid var(--border)" }}>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Title</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Project</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Status</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Priority</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Due Date</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(t => (
+                    <tr key={t.id} style={{ borderBottom: "1px solid var(--border)", transition: "background 0.1s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--surface)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <td style={{ padding: "11px 14px", fontWeight: 600, color: "var(--text)" }}>{t.title}</td>
+                      <td style={{ padding: "11px 14px", color: "var(--text-muted)" }}>{t.project || "—"}</td>
+                      <td style={{ padding: "11px 14px" }}><span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", background: "var(--border)", borderRadius: 20, padding: "3px 9px" }}>{t.status}</span></td>
+                      <td style={{ padding: "11px 14px", color: "var(--text-muted)", fontSize: 12 }}>{t.priority}</td>
+                      <td style={{ padding: "11px 14px", color: t.dueDate && isOverdue(t.dueDate) ? "#DC2626" : "var(--text-muted)" }}>{t.dueDate || "—"}</td>
+                      <td style={{ padding: "11px 14px" }}>
+                        <div style={{ display: "flex", gap: 5 }}>
+                          <button style={{ ...btnStyle("ghost", "sm"), fontSize: 11 }} onClick={() => { setEditing(t); setShowAdd(true); }}>Edit</button>
+                          {(role === "Owner" || role === "Admin") && <button style={{ fontSize: 11, padding: "3px 8px", border: "none", borderRadius: 6, background: "#fee2e2", color: "#991b1b", cursor: "pointer", fontWeight: 600 }} onClick={() => setConfirmDelete(t)}>Del</button>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
       )}
 

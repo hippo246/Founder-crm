@@ -1,0 +1,32 @@
+import React from "react";
+
+export default function TasksRoadmapSection({ settings, setSettings, setIsDirty, saveAll }) {
+  const f = settings;
+  const setF = setSettings;
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+      {[
+        ["Default task view", "defaultTaskView", ["Kanban", "My Day", "Inbox", "By Project", "All Tasks"]],
+        ["Default roadmap phase type", "defaultPhaseType", ["Numeric", "Named", "Sprint", "Milestone"]],
+        ["Default task priority", "defaultTaskPriority", ["Low", "Medium", "High", "Urgent"]],
+      ].map(([label, key, opts]) => (
+        <div key={key} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 16 }}>
+          <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>{label}</label>
+          <select style={{ padding: "7px 10px", fontSize: 13, borderRadius: "var(--r-sm)", border: "1px solid var(--border)", background: "var(--input-bg)", color: "var(--text)", width: "100%" }}
+            value={f[key] || opts[0]} onChange={e => { setF(p => ({...p, [key]: e.target.value})); setIsDirty(true); }}>
+            {opts.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+      ))}
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 16 }}>
+        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>Follow-up reminder days</label>
+        <input type="number" min="1" max="30" style={{ padding: "7px 10px", fontSize: 13, borderRadius: "var(--r-sm)", border: "1px solid var(--border)", background: "var(--input-bg)", color: "var(--text)", width: "100%" }}
+          value={f.followUpDays || 3} onChange={e => { setF(p => ({...p, followUpDays: Number(e.target.value)})); setIsDirty(true); }} />
+      </div>
+      <div style={{ gridColumn: "1 / -1" }}>
+        <button style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--r-md)", cursor: "pointer" }} onClick={saveAll}>Save Settings</button>
+      </div>
+    </div>
+  );
+}

@@ -30,6 +30,18 @@ export default function BusinessSection({ settings, setSettings, saveAll }) {
       <FormField label="Business ID / GSTIN (optional)">
         <input style={inputStyle} value={settings.businessId || ""} onChange={set("businessId")} />
       </FormField>
+      <FormField label="Tax ID / VAT Number">
+        <input style={inputStyle} value={settings.taxId || ""} onChange={set("taxId")} />
+      </FormField>
+      <FormField label="Registration Number / CIN">
+        <input style={inputStyle} value={settings.registrationNumber || ""} onChange={set("registrationNumber")} />
+      </FormField>
+      <FormField label="Support Email">
+        <input style={inputStyle} type="email" value={settings.supportEmail || ""} onChange={set("supportEmail")} />
+      </FormField>
+      <FormField label="Support Phone">
+        <input style={inputStyle} value={settings.supportPhone || ""} onChange={set("supportPhone")} />
+      </FormField>
       <div style={{ marginTop: 8 }}>
         <button style={btnStyle("primary")} onClick={saveAll}>Save</button>
       </div>

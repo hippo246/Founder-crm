@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   FOUNDER OS — Responsive breakpoints
+   FOUNDER OS — Comprehensive Mobile-First Responsive Styles
 ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Tablet (≤1024px) ───────────────────────────────────────────────────── */
@@ -9,48 +9,175 @@
   .section-three-col { grid-template-columns: 1fr 1fr; }
 }
 
-/* ── Mobile (≤768px) ────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE (≤768px) — Full phone optimization
+══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
+  /* ── Layout ──────────────────────────────────────────────────────────── */
   .sidebar { display: none !important; }
-  .mobile-menu-btn { display: none !important; }
+  .mobile-menu-btn { display: none !important; } /* topbar hamburger hidden — use bottom nav */
 
-  .page-content { padding: 14px 14px; padding-bottom: 80px !important; }
-  .module-header { gap: 8px; }
+  .main-content { margin-left: 0 !important; width: 100% !important; }
+  .page-content {
+    padding: 12px 12px !important;
+    padding-bottom: 90px !important; /* always above bottom nav */
+  }
+
+  /* ── Topbar ──────────────────────────────────────────────────────────── */
+  .topbar { padding: 0 12px; gap: 8px; height: 52px; }
+  .topbar-search { max-width: 160px; font-size: 12px; padding: 5px 10px; }
+  .topbar-actions { gap: 4px; }
+
+  /* ── Module headers ──────────────────────────────────────────────────── */
+  .module-header { gap: 8px; flex-wrap: wrap; }
   .module-header-left h2 { font-size: 18px; }
-  .module-header-actions { width: 100%; }
+  .module-header-actions { width: 100%; gap: 6px; }
+  .module-header-actions button { flex: 1; justify-content: center; font-size: 12px; }
 
+  /* ── Stat grids ──────────────────────────────────────────────────────── */
   .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
   .stat-card-value { font-size: 20px; }
 
-  .data-table-wrap { overflow-x: auto; }
-  .kanban-board { min-width: 600px; }
-  .filter-bar { gap: 6px; }
+  /* ── Tables — horizontal scroll instead of overflow ─────────────────── */
+  .data-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 500px; }
+  th, td { padding: 8px 10px !important; font-size: 12px !important; }
 
-  .modal-box { border-radius: var(--r-lg); }
-  .modal-body { padding: 14px 16px 18px; }
+  /* ── Kanban — side-scroll ────────────────────────────────────────────── */
+  .kanban-board {
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px !important;
+    padding-bottom: 8px;
+    scroll-snap-type: x mandatory;
+  }
+  .kanban-board > * {
+    min-width: 260px !important;
+    max-width: 280px !important;
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+
+  /* ── Cards grids ─────────────────────────────────────────────────────── */
+  .cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Filters / toolbar ───────────────────────────────────────────────── */
+  .filter-bar { gap: 6px; flex-wrap: wrap; }
+  .filter-bar select,
+  .filter-bar input { font-size: 12px; padding: 6px 8px; }
+
+  /* ── Modals — snap to bottom like sheets ─────────────────────────────── */
+  .modal-overlay { padding: 0 !important; align-items: flex-end !important; }
+  .modal-box {
+    border-radius: 20px 20px 0 0 !important;
+    max-height: 92vh !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .modal-body { padding: 14px 16px 24px; }
   .modal-header { padding: 16px 16px 0; }
 
-  .topbar { padding: 0 14px; gap: 8px; }
-  .topbar-search { max-width: 180px; font-size: 12px; padding: 5px 10px; }
-
+  /* ── Section grids collapse to single column ─────────────────────────── */
   .section-two-col   { grid-template-columns: 1fr !important; }
   .section-three-col { grid-template-columns: 1fr !important; }
 
+  /* ── Generic hide ─────────────────────────────────────────────────────── */
   .hide-mobile { display: none !important; }
+
+  /* ── Forms: full-width grid on mobile ────────────────────────────────── */
+  form > div[style*="grid-template-columns"],
+  div[style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Leads / Contacts header actions ─────────────────────────────────── */
+  div[style*="justifyContent: space-between"][style*="marginBottom"] {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* ── Invoice / Proposal tables ───────────────────────────────────────── */
+  .invoice-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* ── Dashboard charts / analytics ───────────────────────────────────── */
+  .analytics-chart-wrap { overflow-x: auto; min-width: 0; }
+
+  /* ── Calendar ────────────────────────────────────────────────────────── */
+  .calendar-grid { grid-template-columns: repeat(7, minmax(36px, 1fr)) !important; }
+  .calendar-day { min-height: 48px !important; padding: 2px !important; font-size: 11px !important; }
+  .calendar-event { font-size: 9px !important; padding: 1px 3px !important; }
+
+  /* ── Roadmap Kanban ──────────────────────────────────────────────────── */
+  .roadmap-board {
+    display: flex !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px !important;
+    scroll-snap-type: x mandatory;
+  }
+  .roadmap-column {
+    min-width: 260px !important;
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+
+  /* ── Settings: sidebar nav becomes top tabs ──────────────────────────── */
+  .settings-layout {
+    flex-direction: column !important;
+  }
+  .settings-sidebar {
+    width: 100% !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    gap: 4px !important;
+    padding-bottom: 8px !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .settings-sidebar button {
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* ── Bottom nav spacing ──────────────────────────────────────────────── */
+  .mobile-nav-bar { display: flex; }
 }
 
 /* ── Small mobile (≤480px) ──────────────────────────────────────────────── */
 @media (max-width: 480px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
-  .page-content { padding: 10px 10px; padding-bottom: 80px !important; }
+  .page-content { padding: 8px 8px !important; padding-bottom: 90px !important; }
 
-  .modal-overlay { padding: 8px; align-items: flex-end; }
+  .modal-overlay { padding: 0; align-items: flex-end; }
   .modal-box {
-    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    border-radius: 20px 20px 0 0;
     max-height: 94vh;
+    width: 100%;
   }
+
   .topbar-search { display: none; }
+
+  /* Buttons fill width inside headers */
   .module-header-actions .btn { flex: 1; justify-content: center; }
+
+  /* Kanban columns narrower on very small screens */
+  .kanban-board > * {
+    min-width: 230px !important;
+    max-width: 250px !important;
+  }
+
+  /* Touch-friendly tap targets */
+  button, select, input, a {
+    min-height: 40px;
+  }
+  button[style*="fontSize: 11"],
+  button[style*="fontSize: 12"] {
+    min-height: 36px;
+  }
 }
 
 /* ── Ultrawide (≥1600px) ────────────────────────────────────────────────── */
@@ -59,13 +186,56 @@
   .stat-grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
 }
 
-/* ── Mobile bottom nav ──────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE BOTTOM NAV BAR
+══════════════════════════════════════════════════════════════════════════ */
 .mobile-nav-bar {
   display: none;
-  position: fixed; bottom: 0; left: 0; right: 0;
-  background: var(--surface); border-top: 1px solid var(--border);
-  z-index: 100; padding-bottom: env(safe-area-inset-bottom, 0);
+  position: fixed;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  left: 12px;
+  right: 12px;
+  background: rgba(10, 15, 35, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.07);
+  z-index: 500;
+  padding: 6px 8px;
+  gap: 4px;
 }
 @media (max-width: 768px) {
   .mobile-nav-bar { display: flex; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TOUCH IMPROVEMENTS — make all interactive elements feel native
+══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Remove tap flash on mobile */
+  * { -webkit-tap-highlight-color: transparent; }
+
+  /* Smooth momentum scrolling everywhere */
+  .page-content,
+  .kanban-board,
+  .roadmap-board,
+  .settings-sidebar,
+  nav,
+  .modal-body {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Make select elements look native-friendly on mobile */
+  select {
+    font-size: 16px !important; /* prevents iOS zoom on focus */
+  }
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  input[type="date"],
+  input[type="search"],
+  textarea {
+    font-size: 16px !important; /* prevents iOS zoom on focus */
+  }
 }

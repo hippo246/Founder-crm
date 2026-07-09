@@ -1,8 +1,8 @@
 import { Badge, ProgressBar } from "../../components/ui/UI.jsx";
 import { isOverdue, isToday } from "../../lib/helpers.js";
-import { handleDragStart, handleDragEnd } from "../../lib/dragDrop.js";
+import { Draggable } from "@hello-pangea/dnd";
 
-export default function TaskCard({ task, onEdit, onDelete, onStatusChange, role, roadmapItems = [], supportTickets = [], onLinkedSave }) {
+export default function TaskCard({ task, onEdit, onDelete, onStatusChange, role, roadmapItems = [], supportTickets = [], onLinkedSave, index }) {
   const overdue = task.dueDate && isOverdue(task.dueDate) && !["Done", "Cancelled"].includes(task.status);
   const dueTdy = task.dueDate && isToday(task.dueDate);
   const cl = task.checklist || [];
@@ -12,20 +12,25 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange, role,
   const stItem = task.supportTicketId && supportTickets.find(t => t.id === task.supportTicketId);
 
   return (
-    <div
-      draggable={role !== "Viewer"}
-      onDragStart={(e) => handleDragStart(e, task)}
-      onDragEnd={handleDragEnd}
-      style={{
-        background: "var(--surface)",
-        border: `1px solid ${task.status === "Blocked" ? "rgba(239,68,68,0.4)" : "var(--border)"}`,
-        borderRadius: "var(--r-md)",
-        padding: "11px 13px",
-        marginBottom: 7,
-        opacity: ["Done", "Cancelled"].includes(task.status) ? 0.65 : 1,
-        cursor: role !== "Viewer" ? "grab" : "default"
-      }}
-    >
+    <Draggable draggableId={task.id} index={index ?? 0} isDragDisabled={role === "Viewer" || index === undefined}>
+      {(provided, snapshot) => (
+        <div
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          {...provided.dragHandleProps}
+          style={{
+            background: "var(--surface)",
+            border: `1px solid ${task.status === "Blocked" ? "rgba(239,68,68,0.4)" : snapshot.isDragging ? "var(--primary)" : "var(--border)"}`,
+            borderRadius: "var(--r-md)",
+            padding: "11px 13px",
+            marginBottom: 7,
+            opacity: ["Done", "Cancelled"].includes(task.status) && !snapshot.isDragging ? 0.65 : 1,
+            cursor: role !== "Viewer" ? "grab" : "default",
+            boxShadow: snapshot.isDragging ? "0 10px 25px rgba(0,0,0,0.15)" : "none",
+            transform: snapshot.isDragging ? "scale(1.02)" : "none",
+            ...provided.draggableProps.style
+          }}
+        >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
         <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text)", flex: 1, lineHeight: 1.3 }}>{task.title}</span>
         <Badge style={{ fontSize: 10, padding: "2px 6px", marginLeft: 6 }}>{task.priority}</Badge>
@@ -54,6 +59,8 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange, role,
           </>}
         </div>
       )}
-    </div>
+        </div>
+      )}
+    </Draggable>
   );
 }

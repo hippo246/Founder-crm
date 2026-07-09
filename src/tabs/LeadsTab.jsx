@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import * as XLSX from "xlsx";
 import { Badge, Modal, Confirm, FormField, SearchInput, EmptyState, SectionCard, StatMini, ProgressBar, btnStyle, inputStyle, toast } from "../components/ui/UI.jsx";
 import { genId, fmtDate, isOverdue, isToday } from "../lib/helpers.js";
@@ -188,13 +189,18 @@ const LeadForm = ({ initial = {}, onSave, onClose }) => {
     title: "", 
     contact: "", 
     company: "", 
+    role: "", // Decision maker role
+    email: "",
+    phone: "",
     service: "", 
     source: "LinkedIn", 
     value: 0, 
+    budget: 0, // Customer's max budget
     probability: 50, 
     stage: "New", 
     priority: "Medium", 
-    followUpDate: "", 
+    followUpDate: "",
+    followUpIntent: "General Check-in",
     notes: "", 
     tags: [], 
     lostReason: "", 
@@ -206,25 +212,61 @@ const LeadForm = ({ initial = {}, onSave, onClose }) => {
   const [err, setErr] = useState({});
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
   const submit = () => { const e = {}; if (!f.title.trim()) e.title = "Title required"; if (Object.keys(e).length) { setErr(e); return; } onSave(f); };
+  
   return (
-    <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <FormField label="Lead title" required><input style={inputStyle} value={f.title} onChange={set("title")} />{err.title && <span style={{ color: "var(--danger)", fontSize: 11 }}>{err.title}</span>}</FormField>
-        <FormField label="Contact name"><input style={inputStyle} value={f.contact} onChange={set("contact")} /></FormField>
-        <FormField label="Company"><input style={inputStyle} value={f.company} onChange={set("company")} /></FormField>
-        <FormField label="Service / Product"><input style={inputStyle} value={f.service} onChange={set("service")} /></FormField>
-        <FormField label="Source"><select style={inputStyle} value={f.source} onChange={set("source")}>{LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}</select></FormField>
-        <FormField label="Stage"><select style={inputStyle} value={f.stage} onChange={set("stage")}>{LEAD_STAGES.map(s => <option key={s}>{s}</option>)}</select></FormField>
-        <FormField label="Priority"><select style={inputStyle} value={f.priority} onChange={set("priority")}>{LEAD_PRIORITIES.map(s => <option key={s}>{s}</option>)}</select></FormField>
-        <FormField label="Value (₹)"><input style={inputStyle} type="number" value={f.value} onChange={set("value")} /></FormField>
-        <FormField label="Probability %"><input style={inputStyle} type="number" min="0" max="100" value={f.probability} onChange={set("probability")} /></FormField>
-        <FormField label="Follow-up date"><input style={inputStyle} type="date" value={f.followUpDate} onChange={set("followUpDate")} /></FormField>
+    <div style={{ padding: "0 10px" }}>
+      <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+        <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>Lead Information</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "0 16px" }}>
+          <FormField label="Lead Title" required><input style={{ ...inputStyle, fontSize: 16, fontWeight: 500, padding: "10px 12px", borderColor: err.title ? "#ef4444" : undefined }} value={f.title} onChange={set("title")} placeholder="e.g. Acme Q3 Campaign" />{err.title && <span style={{ color: "var(--danger)", fontSize: 11 }}>{err.title}</span>}</FormField>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px", marginTop: 16 }}>
+          <FormField label="Target Service / Product"><input style={inputStyle} value={f.service} onChange={set("service")} placeholder="e.g. Web Development" /></FormField>
+          <FormField label="Acquisition Source"><select style={inputStyle} value={f.source} onChange={set("source")}>{LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}</select></FormField>
+          <FormField label="Sales Stage"><select style={inputStyle} value={f.stage} onChange={set("stage")}>{LEAD_STAGES.map(s => <option key={s}>{s}</option>)}</select></FormField>
+          <FormField label="Priority"><select style={inputStyle} value={f.priority} onChange={set("priority")}>{LEAD_PRIORITIES.map(s => <option key={s}>{s}</option>)}</select></FormField>
+        </div>
       </div>
-      {f.stage === "Lost" && <FormField label="Lost reason"><input style={inputStyle} value={f.lostReason} onChange={set("lostReason")} placeholder="Why was this lead lost?" /></FormField>}
-      <FormField label="Notes"><textarea style={{ ...inputStyle, minHeight: 72, resize: "vertical" }} value={f.notes} onChange={set("notes")} /></FormField>
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-        <button style={btnStyle("ghost")} onClick={onClose}>Cancel</button>
-        <button style={btnStyle("primary")} onClick={submit}>Save lead</button>
+
+      <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+        <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>Contact & Company</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+          <FormField label="Contact Name"><input style={inputStyle} value={f.contact} onChange={set("contact")} placeholder="John Doe" /></FormField>
+          <FormField label="Decision Maker Role"><input style={inputStyle} value={f.role} onChange={set("role")} placeholder="e.g. CEO, Marketing Director" /></FormField>
+          <FormField label="Company Name"><input style={inputStyle} value={f.company} onChange={set("company")} placeholder="Acme Corp" /></FormField>
+          <FormField label="Email"><input style={inputStyle} type="email" value={f.email} onChange={set("email")} placeholder="john@acme.com" /></FormField>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+        <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>Deal Economics</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 16px" }}>
+          <FormField label="Estimated Value (₹)"><input style={inputStyle} type="number" min="0" value={f.value} onChange={set("value")} /></FormField>
+          <FormField label="Client Budget (₹)"><input style={inputStyle} type="number" min="0" value={f.budget} onChange={set("budget")} /></FormField>
+          <FormField label="Probability %">
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input type="range" min="0" max="100" step="10" value={f.probability} onChange={set("probability")} style={{ flex: 1, accentColor: "var(--primary)" }} />
+              <span style={{ fontSize: 13, fontWeight: 600, width: 36, textAlign: "right" }}>{f.probability}%</span>
+            </div>
+          </FormField>
+        </div>
+        {f.stage === "Lost" && <FormField label="Lost Reason"><input style={inputStyle} value={f.lostReason} onChange={set("lostReason")} placeholder="Why was this lead lost?" /></FormField>}
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>Next Steps</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+          <FormField label="Follow-up Date"><input style={inputStyle} type="date" value={f.followUpDate} onChange={set("followUpDate")} /></FormField>
+          <FormField label="Follow-up Intent"><select style={inputStyle} value={f.followUpIntent} onChange={set("followUpIntent")}><option>General Check-in</option><option>Send Proposal</option><option>Product Demo</option><option>Contract Review</option></select></FormField>
+        </div>
+        <FormField label="Discovery Notes"><textarea style={{ ...inputStyle, minHeight: 90, resize: "vertical" }} value={f.notes} onChange={set("notes")} placeholder="Pain points, requirements, conversation summary..." /></FormField>
+      </div>
+
+      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+        <button style={{ ...btnStyle("ghost"), padding: "10px 20px" }} onClick={onClose}>Cancel</button>
+        <button style={{ ...btnStyle("primary"), padding: "10px 24px", fontSize: 14 }} onClick={submit}>
+          {initial.id ? "Update Lead" : "Create Lead"}
+        </button>
       </div>
     </div>
   );
@@ -233,33 +275,36 @@ const LeadForm = ({ initial = {}, onSave, onClose }) => {
 const PRIORITY_DOT = { High: "#ef4444", Medium: "#f59e0b", Low: "#22c55e" };
 const STAGE_ACCENT = { New: "#6366f1", Contacted: "#3b82f6", Qualified: "#8b5cf6", Proposal: "#f59e0b", Negotiation: "#f97316", Won: "#22c55e", Lost: "#ef4444" };
 
-const LeadCard = ({ lead, onEdit, onDelete, onMarkWonLost, role, isDragging, onDragStart, onDragEnd }) => {
+const LeadCard = ({ lead, onEdit, onDelete, onMarkWonLost, role, index }) => {
   const overdue = lead.followUpDate && isOverdue(lead.followUpDate);
   const todayFU = lead.followUpDate && isToday(lead.followUpDate);
   const initials = (lead.contact || lead.title || "?").split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase();
   const prob = Number(lead.probability) || 0;
   return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      style={{
-        background: "var(--surface)",
-        border: `1px solid ${isDragging ? "var(--primary,#6366f1)" : "var(--border)"}`,
-        borderLeft: `3px solid ${PRIORITY_DOT[lead.priority] || "#6366f1"}`,
-        borderRadius: 10,
-        padding: "11px 12px",
-        marginBottom: 8,
-        cursor: "grab",
-        opacity: isDragging ? 0.45 : 1,
-        transform: isDragging ? "rotate(1.5deg) scale(0.97)" : "none",
-        transition: "box-shadow 0.15s, opacity 0.15s, transform 0.15s",
-        boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.18)" : "0 1px 3px rgba(0,0,0,0.06)",
-        position: "relative",
-        userSelect: "none",
-      }}
-    >
-      {/* drag grip */}
+    <Draggable draggableId={lead.id} index={index}>
+      {(provided, snapshot) => (
+        <div
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          {...provided.dragHandleProps}
+          style={{
+            background: "var(--surface)",
+            border: `1px solid ${snapshot.isDragging ? "var(--primary,#6366f1)" : "var(--border)"}`,
+            borderLeft: `3px solid ${PRIORITY_DOT[lead.priority] || "#6366f1"}`,
+            borderRadius: 10,
+            padding: "11px 12px",
+            marginBottom: 8,
+            cursor: "grab",
+            opacity: snapshot.isDragging ? 0.9 : 1,
+            transform: snapshot.isDragging ? "scale(1.02)" : "none",
+            transition: "box-shadow 0.2s",
+            boxShadow: snapshot.isDragging ? "0 12px 24px rgba(0,0,0,0.15)" : "0 1px 3px rgba(0,0,0,0.06)",
+            position: "relative",
+            userSelect: "none",
+            ...provided.draggableProps.style
+          }}
+        >
+          {/* drag grip */}
       <div style={{ position: "absolute", top: 10, right: 10, color: "var(--text-muted)", opacity: 0.35, fontSize: 12, letterSpacing: 1, lineHeight: 1 }}>⠿</div>
 
       {/* top row: avatar + title */}
@@ -317,6 +362,8 @@ const LeadCard = ({ lead, onEdit, onDelete, onMarkWonLost, role, isDragging, onD
         </div>
       )}
     </div>
+      )}
+    </Draggable>
   );
 };
 
@@ -328,8 +375,6 @@ export default function LeadsTab({ leads, setLeads, addAudit, role, projects, se
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirm, setConfirm] = useState(null);
-  const [dragId, setDragId] = useState(null);
-  const [dragOverStage, setDragOverStage] = useState(null);
   const filtered = useMemo(() => leads.filter(l => {
     const q = search.toLowerCase();
     return (!q || l.title.toLowerCase().includes(q) || l.contact?.toLowerCase().includes(q) || l.company?.toLowerCase().includes(q))
@@ -350,17 +395,27 @@ export default function LeadsTab({ leads, setLeads, addAudit, role, projects, se
     }
   };
   
-  const moveLeadToStage = (id, stage) => {
-    const lead = leads.find(l => l.id === id);
-    if (!lead || lead.stage === stage) return;
-    const u = leads.map(l => l.id === id ? { ...l, stage } : l);
-    setLeads(u); saveWorkspaceData("leads", u, workspaceId);
-    addAudit("Leads", "Move", `Moved lead to ${stage}: ${lead.title}`);
-    toast(`Moved to ${stage}`);
-    if (stage === "Won") {
+  const onDragEnd = (result) => {
+    const { source, destination, draggableId } = result;
+    if (!destination) return;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+    
+    const stage = destination.droppableId;
+    const lead = leads.find(l => l.id === draggableId);
+    if (!lead) return;
+
+    let u = leads.map(l => l.id === draggableId ? { ...l, stage } : l);
+    
+    if (stage === "Won" && lead.stage !== "Won") {
       const np = { id: genId(), name: `Project — ${lead.title}`, client: lead.contact, industry: "", status: "Planning", budget: lead.value || 0, paid: 0, pending: lead.value || 0, deadline: "", progress: 0, techStack: "", priority: lead.priority, description: lead.notes || "", tags: lead.tags || [], createdAt: new Date().toISOString().slice(0,10) };
-      const pu = [np, ...projects]; setProjects(pu); saveWorkspaceData("projects", pu, workspaceId); toast(`Project created from won lead`);
+      const pu = [np, ...projects]; 
+      setProjects(pu); 
+      saveWorkspaceData("projects", pu, workspaceId); 
+      toast(`Project created from won lead`);
     }
+    
+    setLeads(u); 
+    saveWorkspaceData("leads", u, workspaceId);
   };
 
   const handleExport = () => {
@@ -409,6 +464,10 @@ export default function LeadsTab({ leads, setLeads, addAudit, role, projects, se
               style={{ padding: "5px 14px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "background 0.15s, color 0.15s", background: view === "list" ? "var(--primary,#6366f1)" : "transparent", color: view === "list" ? "#fff" : "var(--text-muted)" }}
               onClick={() => setView("list")}
             >≡ List</button>
+            <button
+              style={{ padding: "5px 14px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "background 0.15s, color 0.15s", background: view === "cards" ? "var(--primary,#6366f1)" : "transparent", color: view === "cards" ? "#fff" : "var(--text-muted)" }}
+              onClick={() => setView("cards")}
+            >⊞ Cards</button>
           </div>
           <button style={{ ...btnStyle("ghost", "sm"), fontSize: 12 }} onClick={handleExport}>↓ Export</button>
           {role !== "Viewer" && (
@@ -424,70 +483,71 @@ export default function LeadsTab({ leads, setLeads, addAudit, role, projects, se
         <select style={{ ...inputStyle, width: "auto" }} value={filterPriority} onChange={e => setFilterPriority(e.target.value)}><option value="All">All priorities</option>{LEAD_PRIORITIES.map(p => <option key={p}>{p}</option>)}</select>
       </div>
       {view === "kanban" ? (
-        <div style={{ overflowX: "auto", paddingBottom: 8 }}>
-          <div style={{ display: "flex", gap: 10, minWidth: 980 }}>
-            {KANBAN_STAGES.map(stage => {
-              const sl = filtered.filter(l => l.stage === stage);
-              const sv = sl.reduce((a, l) => a + (Number(l.value) || 0), 0);
-              const accent = STAGE_ACCENT[stage] || "#6366f1";
-              const isOver = dragOverStage === stage;
-              return (
-                <div
-                  key={stage}
-                  onDragOver={e => { e.preventDefault(); setDragOverStage(stage); }}
-                  onDragLeave={() => setDragOverStage(null)}
-                  onDrop={e => { e.preventDefault(); if (dragId) moveLeadToStage(dragId, stage); setDragId(null); setDragOverStage(null); }}
-                  style={{
-                    flex: "0 0 210px",
-                    background: isOver ? `${accent}0d` : "var(--surface)",
-                    borderRadius: 14,
-                    padding: "0 0 8px 0",
-                    border: isOver ? `2px dashed ${accent}88` : "2px solid transparent",
-                    transition: "background 0.15s, border 0.15s",
-                    overflow: "hidden",
-                  }}
-                >
-                  {/* column accent bar */}
-                  <div style={{ height: 3, background: accent, borderRadius: "14px 14px 0 0", marginBottom: 10 }} />
-                  <div style={{ padding: "0 10px" }}>
-                    <div style={{ marginBottom: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontWeight: 700, fontSize: 11, color: accent, textTransform: "uppercase", letterSpacing: "0.07em" }}>{stage}</span>
-                      <span style={{ background: `${accent}22`, color: accent, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>{sl.length}</span>
-                    </div>
-                    {sv > 0 && (
-                      <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ fontSize: 10, opacity: 0.6 }}>₹</span>
-                        <span style={{ color: "var(--text)", fontSize: 13 }}>{sv.toLocaleString("en-IN")}</span>
+        <DragDropContext onDragEnd={onDragEnd}>
+          <div style={{ overflowX: "auto", paddingBottom: 8 }}>
+            <div style={{ display: "flex", gap: 10, minWidth: 980 }}>
+              {KANBAN_STAGES.map(stage => {
+                const sl = filtered.filter(l => l.stage === stage);
+                const sv = sl.reduce((a, l) => a + (Number(l.value) || 0), 0);
+                const accent = STAGE_ACCENT[stage] || "#6366f1";
+                
+                return (
+                  <Droppable droppableId={stage} key={stage}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        style={{
+                          flex: "0 0 210px",
+                          background: snapshot.isDraggingOver ? `${accent}0d` : "var(--surface)",
+                          borderRadius: 14,
+                          padding: "0 0 8px 0",
+                          border: snapshot.isDraggingOver ? `2px dashed ${accent}88` : "2px solid transparent",
+                          transition: "background 0.15s, border 0.15s",
+                          overflow: "hidden",
+                          minHeight: 200
+                        }}
+                      >
+                        {/* column accent bar */}
+                        <div style={{ height: 3, background: accent, borderRadius: "14px 14px 0 0", marginBottom: 10 }} />
+                        <div style={{ padding: "0 10px" }}>
+                          <div style={{ marginBottom: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontWeight: 700, fontSize: 11, color: accent, textTransform: "uppercase", letterSpacing: "0.07em" }}>{stage}</span>
+                            <span style={{ background: `${accent}22`, color: accent, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>{sl.length}</span>
+                          </div>
+                          {sv > 0 && (
+                            <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+                              <span style={{ fontSize: 10, opacity: 0.6 }}>₹</span>
+                              <span style={{ color: "var(--text)", fontSize: 13 }}>{sv.toLocaleString("en-IN")}</span>
+                            </div>
+                          )}
+                          
+                          {sl.length === 0 && !snapshot.isDraggingOver && (
+                            <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "24px 0", opacity: 0.4, border: "1.5px dashed var(--border)", borderRadius: 10 }}>No leads</div>
+                          )}
+                          
+                          {sl.map((l, index) => (
+                            <LeadCard
+                              key={l.id}
+                              lead={l}
+                              index={index}
+                              role={role}
+                              onEdit={setEditing}
+                              onDelete={(id) => setConfirm(id)}
+                              onMarkWonLost={markWonLost}
+                            />
+                          ))}
+                          {provided.placeholder}
+                        </div>
                       </div>
                     )}
-                    {isOver && dragId && (
-                      <div style={{ border: `2px dashed ${accent}66`, borderRadius: 10, padding: "10px 0", textAlign: "center", marginBottom: 8, fontSize: 11, color: accent, fontWeight: 600 }}>
-                        Drop to move here
-                      </div>
-                    )}
-                    {sl.length === 0 && !isOver
-                      ? <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "24px 0", opacity: 0.4, border: "1.5px dashed var(--border)", borderRadius: 10 }}>No leads</div>
-                      : sl.map(l => (
-                          <LeadCard
-                            key={l.id}
-                            lead={l}
-                            role={role}
-                            onEdit={setEditing}
-                            onDelete={(id) => setConfirm(id)}
-                            onMarkWonLost={markWonLost}
-                            isDragging={dragId === l.id}
-                            onDragStart={() => setDragId(l.id)}
-                            onDragEnd={() => { setDragId(null); setDragOverStage(null); }}
-                          />
-                        ))
-                    }
-                  </div>
-                </div>
-              );
-            })}
+                  </Droppable>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ) : (
+        </DragDropContext>
+      ) : view === "list" ? (
         filtered.length === 0 ? <EmptyState icon="🎯" title="No leads" sub="Add your first lead." action={<AddLeadDropdown onAddNew={() => setShowForm(true)} onImported={handleImport} />} /> : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -541,7 +601,23 @@ export default function LeadsTab({ leads, setLeads, addAudit, role, projects, se
             </table>
           </div>
         )
-      )}
+      ) : view === "cards" ? (
+        filtered.length === 0 ? <EmptyState icon="🎯" title="No leads" sub="Add your first lead." action={<AddLeadDropdown onAddNew={() => setShowForm(true)} onImported={handleImport} />} /> : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+            {filtered.map((l) => (
+              <LeadCard
+                key={l.id}
+                lead={l}
+                role={role}
+                onEdit={setEditing}
+                onDelete={(id) => setConfirm(id)}
+                onMarkWonLost={markWonLost}
+                isDragging={false}
+              />
+            ))}
+          </div>
+        )
+      ) : null}
     </div>
   );
 

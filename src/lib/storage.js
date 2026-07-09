@@ -1,4 +1,5 @@
 // ─── localStorage helpers ─────────────────────────────────────────────────────
+import { syncSaveCollection } from "./sync.js";
 
 export const loadLS = (key, fallback) => {
   try {
@@ -92,10 +93,13 @@ export const loadWorkspaceData = (key, fallback, workspaceId) => {
   return fallback;
 };
 
-// Save data scoped to current workspace
+// Save data scoped to current workspace (localStorage first, then Firestore async)
 export const saveWorkspaceData = (key, val, workspaceId) => {
   const scopedKey = `${workspaceId}_${key}`;
   saveLS(scopedKey, val);
+
+  // Non-blocking dual-write to Firestore
+  syncSaveCollection(workspaceId, key, val).catch(() => {});
 };
 
 // Delete data for a specific workspace

@@ -13,6 +13,7 @@ import { setGlobalDateFormat } from "./lib/helpers.js";
 import { initSessionLock, unlockSession } from "./lib/sessionLock.js";
 import { restoreSession, logout, saveActiveTab, getActiveTab, getCurrentUser } from "./lib/auth.js";
 import { defaultSettings } from "./config/crmConfig.js";
+import { hydrateFromFirestore, subscribeToCollection } from "./lib/sync.js";
 
 
 // ─── Tab components ───────────────────────────────────────────────────────────
@@ -38,6 +39,7 @@ import WhatsAppTemplatesTab from "./tabs/WhatsAppTemplatesTab.jsx";
 import PromptHistoryTab    from "./tabs/PromptHistoryTab.jsx";
 import ProjectLogsTab      from "./tabs/ProjectLogsTab.jsx";
 import RoadmapTrackerTab   from "./tabs/RoadmapTrackerTab.jsx";
+import DemoUnitsTab        from "./tabs/DemoUnitsTab.jsx";
 
 export default function App() {
   // ── Workspace state ───────────────────────────────────────────────────────────
@@ -76,6 +78,7 @@ export default function App() {
   const [promptHistory, setPromptHistory]   = useState(() => loadWorkspaceData("promptHistory", [], currentWorkspaceId));
   const [projectLogs, setProjectLogs]       = useState(() => loadWorkspaceData("projectLogs", [], currentWorkspaceId));
   const [roadmapItems, setRoadmapItems]     = useState(() => loadWorkspaceData("roadmapItems", [], currentWorkspaceId));
+  const [demoUnits, setDemoUnits]           = useState(() => loadWorkspaceData("demoUnits", [], currentWorkspaceId));
   const [tags, setTags]                     = useState(() => loadWorkspaceData("tags", [], currentWorkspaceId));
   const [customFields, setCustomFields]     = useState(() => loadWorkspaceData("customFields", [], currentWorkspaceId));
 
@@ -115,6 +118,56 @@ export default function App() {
     });
     return cleanup;
   }, [settings.sessionTimeout]);
+
+  // ── Firebase Hydration: load all data from Firestore on login or workspace switch ──
+  useEffect(() => {
+    if (!isAuthenticated || !currentWorkspaceId) return;
+
+    hydrateFromFirestore(currentWorkspaceId).then(data => {
+      if (data.contacts?.length)      setContacts(data.contacts);
+      if (data.leads?.length)         setLeads(data.leads);
+      if (data.projects?.length)      setProjects(data.projects);
+      if (data.tasks?.length)         setTasks(data.tasks);
+      if (data.followUps?.length)     setFollowUps(data.followUps);
+      if (data.notes?.length)         setNotes(data.notes);
+      if (data.documents?.length)     setDocuments(data.documents);
+      if (data.invoices?.length)      setInvoices(data.invoices);
+      if (data.payments?.length)      setPayments(data.payments);
+      if (data.proposals?.length)     setProposals(data.proposals);
+      if (data.communications?.length) setCommunications(data.communications);
+      if (data.calendarEvents?.length) setCalendarEvents(data.calendarEvents);
+      if (data.supportTickets?.length) setSupportTickets(data.supportTickets);
+      if (data.whatsappTemplates?.length) setWhatsappTemplates(data.whatsappTemplates);
+      if (data.emailTemplates?.length) setEmailTemplates(data.emailTemplates);
+      if (data.promptHistory?.length) setPromptHistory(data.promptHistory);
+      if (data.projectLogs?.length)   setProjectLogs(data.projectLogs);
+      if (data.roadmapItems?.length)  setRoadmapItems(data.roadmapItems);
+      if (data.demoUnits?.length)     setDemoUnits(data.demoUnits);
+      if (data.tags?.length)          setTags(data.tags);
+      if (data.customFields?.length)  setCustomFields(data.customFields);
+    }).catch(err => console.warn('[App] Firestore hydration error:', err));
+  }, [isAuthenticated, currentWorkspaceId]);
+
+  // ── Real-time Firestore listeners: keep state in sync across tabs/devices ────
+  useEffect(() => {
+    if (!isAuthenticated || !currentWorkspaceId) return;
+
+    const unsubs = [
+      subscribeToCollection(currentWorkspaceId, "contacts",       setContacts),
+      subscribeToCollection(currentWorkspaceId, "leads",          setLeads),
+      subscribeToCollection(currentWorkspaceId, "projects",       setProjects),
+      subscribeToCollection(currentWorkspaceId, "tasks",          setTasks),
+      subscribeToCollection(currentWorkspaceId, "followUps",      setFollowUps),
+      subscribeToCollection(currentWorkspaceId, "notes",          setNotes),
+      subscribeToCollection(currentWorkspaceId, "invoices",       setInvoices),
+      subscribeToCollection(currentWorkspaceId, "payments",       setPayments),
+      subscribeToCollection(currentWorkspaceId, "proposals",      setProposals),
+      subscribeToCollection(currentWorkspaceId, "calendarEvents", setCalendarEvents),
+      subscribeToCollection(currentWorkspaceId, "supportTickets", setSupportTickets),
+    ];
+
+    return () => unsubs.forEach(u => u());
+  }, [isAuthenticated, currentWorkspaceId]);
 
   // ── Keyboard shortcuts (unified — avoids duplicate ⌘K listeners) ─────────────
   useEffect(() => {
@@ -220,6 +273,7 @@ export default function App() {
     setPromptHistory(loadWorkspaceData("promptHistory", [], workspaceId));
     setProjectLogs(loadWorkspaceData("projectLogs", [], workspaceId));
     setRoadmapItems(loadWorkspaceData("roadmapItems", [], workspaceId));
+    setDemoUnits(loadWorkspaceData("demoUnits", [], workspaceId));
     setTags(loadWorkspaceData("tags", [], workspaceId));
     setCustomFields(loadWorkspaceData("customFields", [], workspaceId));
     setAudit(loadWorkspaceData("audit", [], workspaceId));
@@ -295,6 +349,7 @@ export default function App() {
     setPromptHistory([]);     saveWorkspaceData("promptHistory", [], currentWorkspaceId);
     setProjectLogs([]);      saveWorkspaceData("projectLogs", [], currentWorkspaceId);
     setRoadmapItems([]);    saveWorkspaceData("roadmapItems", [], currentWorkspaceId);
+    setDemoUnits([]);        saveWorkspaceData("demoUnits", [], currentWorkspaceId);
     setTags([]);                    saveWorkspaceData("tags", [], currentWorkspaceId);
     setCustomFields([]);    saveWorkspaceData("customFields", [], currentWorkspaceId);
     setAudit([]);                saveWorkspaceData("audit", [], currentWorkspaceId);
@@ -405,6 +460,9 @@ export default function App() {
         tab={tab} setTab={handleTabChange}
         mobileMenu={mobileMenu} setMobileMenu={setMobileMenu}
         businessName={settings.businessName}
+        workspaces={workspaces}
+        currentWorkspaceId={currentWorkspaceId}
+        switchWorkspace={switchWorkspace}
       />
 
       {/* Mobile Bottom Nav */}
@@ -602,7 +660,7 @@ export default function App() {
               currentWorkspaceId={currentWorkspaceId} switchWorkspace={switchWorkspace}
               addWorkspace={addWorkspace} updateWorkspace={updateWorkspace} deleteWorkspace={deleteWorkspace}
               tags={tags} setTags={setTags} customFields={customFields} setCustomFields={setCustomFields}
-              workspaceId={currentWorkspaceId}
+              workspaceId={currentWorkspaceId} user={user}
             />
           )}
           {tab === "wa-templates" && (
@@ -634,6 +692,15 @@ export default function App() {
               notes={notes} setNotes={setNotes}
               projects={projects}
               workspaceId={currentWorkspaceId} onLinkedSave={handleLinkedRecordSave}
+            />
+          )}
+          {tab === "demo-units" && (
+            <DemoUnitsTab
+              demoUnits={demoUnits}
+              setDemoUnits={setDemoUnits}
+              addAudit={addAudit}
+              role={role}
+              workspaceId={currentWorkspaceId}
             />
           )}
         </main>

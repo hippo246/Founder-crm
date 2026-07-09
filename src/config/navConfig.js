@@ -22,6 +22,7 @@ export const NAV_TABS = [
   { id: "prompts",        label: "Prompt History",    icon: "🤖", group: "Founder OS" },
   { id: "project-logs",   label: "Project Logs",      icon: "🔧", group: "Founder OS" },
   { id: "roadmap",        label: "Roadmap",           icon: "🗺️",  group: "Founder OS" },
+  { id: "demo-units",     label: "Demo Units",        icon: "🖥️", group: "Founder OS" },
   { id: "wa-templates",   label: "Templates",         icon: "📱", group: "Founder OS" },
   // ── System ────────────────────────────────────────────────────────────
   { id: "analytics",      label: "Analytics",         icon: "📊", group: "System" },

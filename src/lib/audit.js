@@ -1,5 +1,6 @@
 import { genId } from "./helpers.js";
 import { saveWorkspaceData } from "./storage.js";
+import { syncAddAuditLog } from "./sync.js";
 
 // ─── Phase 14: Upgraded audit entry schema ────────────────────────────────────
 //
@@ -47,4 +48,7 @@ export const makeAddAudit = (role, setAudit, workspaceId = "workspace-1") => (mo
     saveWorkspaceData("audit", updated, workspaceId);
     return updated;
   });
+
+  // Async write to Firestore auditLogs (non-blocking)
+  syncAddAuditLog(workspaceId, entry).catch(() => {});
 };

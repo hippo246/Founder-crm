@@ -34,6 +34,9 @@ export default function AppearanceSection({ settings, setSettings, saveAll, role
             {["Compact","Comfortable","Detailed"].map(v => <option key={v}>{v}</option>)}
           </select>
         </FormField>
+        <FormField label="Enable UI animations">
+          <input type="checkbox" checked={settings.enableAnimations !== false} onChange={set("enableAnimations")} style={{ width: 16, height: 16, accentColor: "var(--accent)" }} />
+        </FormField>
         <div style={{ marginTop: 8 }}>
           <button style={btnStyle("primary")} onClick={saveAll}>Save</button>
         </div>

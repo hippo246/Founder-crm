@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, memo } from "react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Badge, Modal, Confirm, FormField, SearchInput, EmptyState, SectionCard, StatMini, ProgressBar, btnStyle, inputStyle, toast } from "../components/ui/UI.jsx";
 import { genId, fmtDate, isOverdue } from "../lib/helpers.js";
 import { saveLS, saveWorkspaceData } from "../lib/storage.js";
@@ -257,42 +258,49 @@ const RoadmapItemCard = memo(({ item, indent=0, handlers }) => {
 
   return (
     <div style={{marginBottom:6,marginLeft:indent*20}}>
-      <div style={{background:"var(--surface)",border:`1px solid ${item.status==="Blocked"?"rgba(239,68,68,0.4)":"var(--border)"}`,borderRadius:"var(--r-md)",padding:"12px 14px"}}>
+      <div style={{
+        background: "var(--surface)", 
+        border: `1px solid ${item.status==="Blocked" ? "var(--danger)" : "var(--border)"}`, 
+        borderLeft: `4px solid ${item.status==="Done" ? "var(--success)" : item.status==="Blocked" ? "var(--danger)" : "var(--accent)"}`,
+        borderRadius: "var(--r-md)", 
+        padding: "16px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+        transition: "transform 0.15s, box-shadow 0.15s"
+      }}
+      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 16px rgba(0,0,0,0.08)"; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)"; }}>
+        
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
-              {children.length>0&&<button onClick={()=>setExpandedItem(isExpanded?null:item.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:11,padding:0,flexShrink:0}}>{isExpanded?"▼":"▶"}</button>}
-              <span style={{fontWeight:600,fontSize:13,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.item}</span>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              {children.length>0&&<button onClick={()=>setExpandedItem(isExpanded?null:item.id)} style={{background:"var(--surface-raised)",border:"1px solid var(--border)",borderRadius:"4px",cursor:"pointer",color:"var(--text-muted)",fontSize:10,padding:"2px 6px",flexShrink:0, transition:"0.2s"}}>{isExpanded?"▼ Collapse":"▶ Expand"}</button>}
+              <span style={{fontWeight:700,fontSize:15,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap", letterSpacing:"-0.2px"}}>{item.item}</span>
             </div>
-            <div style={{fontSize:11,color:"var(--text-muted)",display:"flex",flexWrap:"wrap",gap:6}}>
+            
+            <div style={{fontSize:12,color:"var(--text-muted)",display:"flex",flexWrap:"wrap",gap:8, marginBottom: 8}}>
               {(item.sector||item.phase||item.step||item.subStep)&&(
-                <span style={{color:"var(--accent)",fontWeight:500}}>
+                <span style={{color:"var(--accent)",fontWeight:600, background:"var(--accent-dim)", padding:"2px 8px", borderRadius:"12px"}}>
                   {[item.sector,item.phase,item.step,item.subStep].filter(Boolean).join(" › ")}
                 </span>
               )}
-              {item.targetDate&&<span style={{color:overdue?"var(--danger)":undefined}}>· 📅 {fmtDate(item.targetDate)}{overdue&&" ⏰"}</span>}
-              {item.owner&&<span>· 👤 {item.owner}</span>}
-              {item.team&&<span>· 🏢 {item.team}</span>}
-              {item.estimatedHours&&<span>· ⏱ {item.estimatedHours}h est{item.actualHours?` / ${item.actualHours}h actual`:""}</span>}
-              {item.storyPoints&&<span>· 🎯 {item.storyPoints}pt</span>}
-              {item.effort&&<span>· 👕 {item.effort}</span>}
-              {item.complexity&&item.complexity!=="Medium"&&<span>· ⚡ {item.complexity}</span>}
-              {item.risk&&item.risk!=="Low"&&<span style={{color:item.risk==="Critical"?"var(--danger)":item.risk==="High"?"var(--warning)":undefined}}>· ⚠️ {item.risk} risk</span>}
-              {item.ticketRef&&<span>· 🎫 {item.ticketRef}</span>}
-              {lt>0&&<span>· ✅ {lt} task{lt!==1?"s":""}</span>}
-              {lp>0&&<span>· 🤖 {lp} prompt{lp!==1?"s":""}</span>}
+              {item.targetDate&&<span style={{color:overdue?"var(--danger)":undefined, background:overdue?"var(--danger-dim)":"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>📅 {fmtDate(item.targetDate)}{overdue&&" ⏰"}</span>}
+              {item.owner&&<span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>👤 {item.owner}</span>}
+              {item.storyPoints&&<span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>🎯 {item.storyPoints}pt</span>}
+              {item.risk&&item.risk!=="Low"&&<span style={{color:item.risk==="Critical"?"var(--danger)":item.risk==="High"?"var(--warning)":undefined}}>⚠️ {item.risk} risk</span>}
+              {lt>0&&<span>✅ {lt} task{lt!==1?"s":""}</span>}
             </div>
-            {item.blockers&&<div style={{marginTop:6,fontSize:11,color:"var(--danger)",background:"var(--danger-dim)",padding:"4px 8px",borderRadius:"var(--r-sm)"}}>🚫 {item.blockers}</div>}
-            {item.acceptanceCriteria&&item.status!=="Done"&&<div style={{marginTop:4,fontSize:11,color:"var(--text-muted)",borderLeft:"2px solid var(--border)",paddingLeft:8}}>✔ {item.acceptanceCriteria.length>120?item.acceptanceCriteria.slice(0,120)+"…":item.acceptanceCriteria}</div>}
-            {item.externalUrl&&<div style={{marginTop:4}}><a href={item.externalUrl} target="_blank" rel="noreferrer" style={{fontSize:11,color:"var(--accent)"}}>🔗 {item.externalUrl.replace(/^https?:\/\//,"").slice(0,50)}</a></div>}
+            
+            {item.blockers&&<div style={{marginTop:8,marginBottom:8,fontSize:12,color:"var(--danger)",background:"var(--danger-dim)",border:"1px solid rgba(239,68,68,0.2)",padding:"6px 10px",borderRadius:"var(--r-sm)"}}><strong>Blocker:</strong> {item.blockers}</div>}
+            
           </div>
-          <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center", background:"var(--surface-raised)", padding:"6px", borderRadius:"8px", border:"1px solid var(--border)"}}>
             <Badge label={item.status} size="sm" />
             <Badge label={item.priority} size="sm" />
           </div>
         </div>
-        <div style={{marginTop:8,marginBottom:role==="Viewer"?0:8}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-muted)",marginBottom:2}}><span>Progress</span><span style={{fontWeight:700}}>{item.progress||0}%</span></div>
+        
+        <div style={{marginTop:12,marginBottom:role==="Viewer"?0:12, background:"var(--surface-raised)", padding:"10px 14px", borderRadius:"8px", border:"1px solid var(--border)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--text-muted)",marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontWeight:600}}><span>Progress</span><span style={{color:item.progress===100?"var(--success)":"var(--accent)"}}>{item.progress||0}%</span></div>
           {role!=="Viewer"
             ? <input type="range" min="0" max="100" step="5" value={item.progress||0}
                 onChange={e=>{ const u=items.map(i=>i.id===item.id?{...i,progress:Number(e.target.value)}:i); setRoadmapItems(u); }}
@@ -301,20 +309,18 @@ const RoadmapItemCard = memo(({ item, indent=0, handlers }) => {
             : <ProgressBar value={item.progress||0} color={item.status==="Blocked"?"var(--danger)":item.status==="Done"?"var(--success)":"var(--accent)"} />
           }
         </div>
-        {item.notes&&<div style={{fontSize:11,color:"var(--text-muted)",marginBottom:6,lineHeight:1.5}}>{item.notes}</div>}
+        
+        {item.notes&&<div style={{fontSize:12,color:"var(--text-muted)",marginBottom:12,lineHeight:1.6, padding:"8px 12px", background:"var(--background)", borderRadius:"6px", borderLeft:"2px solid var(--border)"}}>{item.notes}</div>}
+        
         {role!=="Viewer"&&(
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {item.status!=="Done"&&<button style={{...btnStyle("ghost","sm"),color:"var(--success)"}} onClick={()=>changeStatus(item.id,"Done")}>✓ Done</button>}
-            {item.status!=="In Progress"&&item.status!=="Done"&&<button style={{...btnStyle("ghost","sm"),color:"var(--accent)"}} onClick={()=>changeStatus(item.id,"In Progress")}>▶ Start</button>}
-            {item.status!=="Blocked"&&<button style={{...btnStyle("ghost","sm"),color:"var(--danger)"}} onClick={()=>changeStatus(item.id,"Blocked")}>Block</button>}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap", paddingTop: 10, borderTop:"1px dashed var(--border)"}}>
+            {item.status!=="Done"&&<button style={{...btnStyle("ghost","sm"),color:"var(--success)", background:"var(--success-dim)"}} onClick={()=>changeStatus(item.id,"Done")}>✓ Mark Done</button>}
+            {item.status!=="In Progress"&&item.status!=="Done"&&<button style={{...btnStyle("ghost","sm"),color:"var(--accent)", background:"var(--accent-dim)"}} onClick={()=>changeStatus(item.id,"In Progress")}>▶ Start</button>}
+            {item.status!=="Blocked"&&<button style={{...btnStyle("ghost","sm"),color:"var(--danger)", background:"var(--danger-dim)"}} onClick={()=>changeStatus(item.id,"Blocked")}>Block</button>}
             {item.status==="Blocked"&&<button style={{...btnStyle("ghost","sm"),color:"var(--warning)"}} onClick={()=>clearBlocker(item.id)}>Clear Blocker</button>}
             <button style={btnStyle("ghost","sm")} onClick={()=>createTask(item)}>+ Task</button>
             <button style={btnStyle("ghost","sm")} onClick={()=>setEditing(item)}>Edit</button>
-            {(role==="Owner"||role==="Admin")&&<button style={{...btnStyle("ghost","sm"),color:"var(--danger)"}} onClick={()=>setConfirm(item.id)}>Del</button>}
-            {onLinkedSave && <>
-              <button style={btnStyle("ghost","sm")} onClick={()=>onLinkedSave("note",{title:`Note — ${item.item}`,relatedTo:item.item,relatedType:"Roadmap",body:item.notes||"",tags:[]})}>📝 Note</button>
-              <button style={btnStyle("ghost","sm")} onClick={()=>onLinkedSave("calendarEvent",{title:item.item,type:"Deadline",date:item.targetDate||new Date().toISOString().slice(0,10),time:"",notes:item.notes||""})}>📅 Event</button>
-            </>}
+            {(role==="Owner"||role==="Admin")&&<button style={{...btnStyle("ghost","sm"),color:"var(--danger)"}} onClick={()=>setConfirm(item.id)}>Delete</button>}
           </div>
         )}
       </div>
@@ -642,29 +648,112 @@ export default function RoadmapTrackerTab({ roadmapItems, setRoadmapItems, addAu
     if(view==="By Sector")  return renderGroups(groupBy("sector"),"🏷️");
     if(view==="By Phase")   return renderGroups(groupBy("phase"),"📐");
     if(view==="Timeline") {
-      const withDates = filtered.filter(i=>i.targetDate).sort((a,b)=>new Date(a.targetDate)-new Date(b.targetDate));
-      const noDates = filtered.filter(i=>!i.targetDate);
+      // Implement a visual Kanban/Timeline view
+      const statuses = ["Backlog", "Planned", "In Progress", "Blocked", "Done"];
+      
       return (
-        <div>
-          <div style={{marginBottom:16,fontSize:12,color:"var(--text-muted)"}}>Sorted by target date · {withDates.length} with dates · {noDates.length} without</div>
-          {withDates.map(item => (
-            <div key={item.id} style={{display:"flex",gap:14,marginBottom:12,padding:"12px 14px",background:"var(--surface)",border:"1px solid var(--border)",borderLeft:`4px solid ${item.targetDate<today?"var(--danger)":item.targetDate===today?"var(--warning)":"var(--accent)"}`,borderRadius:"var(--r-md)"}}>
-              <div style={{minWidth:90,fontSize:12,fontWeight:600,color:item.targetDate<today?"var(--danger)":"var(--text-muted)"}}>{item.targetDate}</div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:600,fontSize:13}}>{item.item}</div>
-                <div style={{fontSize:12,color:"var(--text-muted)"}}>{item.project} · {[item.sector,item.phase,item.step].filter(Boolean).join(" › ")} · <span style={{color:item.status==="Done"?"var(--success)":item.status==="Blocked"?"var(--danger)":"var(--text-muted)"}}>{item.status}</span></div>
-              </div>
-              <div style={{fontSize:12,fontWeight:600,color:"var(--text-muted)"}}>{item.progress||0}%</div>
-            </div>
-          ))}
-          {noDates.length>0&&<div style={{marginTop:16,fontSize:12,color:"var(--text-muted)",borderTop:"1px solid var(--border)",paddingTop:12}}>Items without target dates ({noDates.length})</div>}
-          {noDates.map(item=>(
-            <div key={item.id} style={{display:"flex",gap:14,marginBottom:8,padding:"10px 14px",background:"var(--surface)",border:"1px solid var(--border)",borderLeft:"4px solid var(--border)",borderRadius:"var(--r-md)",opacity:0.7}}>
-              <div style={{minWidth:90,fontSize:12,color:"var(--text-muted)"}}>No date</div>
-              <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{item.item}</div><div style={{fontSize:12,color:"var(--text-muted)"}}>{item.project} · {item.status}</div></div>
-            </div>
-          ))}
-        </div>
+        <DragDropContext onDragEnd={onDragEnd}>
+          <div style={{
+            display: "grid", 
+            gridTemplateColumns: `repeat(${statuses.length}, minmax(280px, 1fr))`, 
+            gap: 16, 
+            overflowX: "auto", 
+            paddingBottom: 24,
+            alignItems: "flex-start"
+          }}>
+            {statuses.map(status => {
+              const statusItems = filtered.filter(i => i.status === status).sort((a,b)=>(priorityOrder[a.priority]||3)-(priorityOrder[b.priority]||3));
+              return (
+                <Droppable droppableId={status} key={status}>
+                  {(provided, snapshot) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      style={{
+                        background: snapshot.isDraggingOver ? "var(--accent-dim)" : "var(--surface-raised)",
+                        borderRadius: "var(--r-lg)",
+                        padding: 12,
+                        border: "1px solid var(--border)",
+                        minHeight: 300,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                        transition: "background 0.2s"
+                      }}
+                    >
+                      <div style={{
+                        display: "flex", 
+                        justifyContent: "space-between", 
+                        alignItems: "center",
+                        padding: "8px 12px",
+                        background: "var(--surface)",
+                        borderRadius: "var(--r-md)",
+                        borderBottom: `2px solid ${status==="Done"?"var(--success)":status==="Blocked"?"var(--danger)":status==="In Progress"?"var(--accent)":"var(--border)"}`
+                      }}>
+                        <div style={{fontWeight: 700, fontSize: 13, color: "var(--text)"}}>{status}</div>
+                        <Badge label={statusItems.length.toString()} size="sm" />
+                      </div>
+                      
+                      {statusItems.map((item, index) => (
+                        <Draggable key={item.id} draggableId={item.id} index={index} isDragDisabled={role==="Viewer"}>
+                          {(provided, snapshot) => (
+                            <div 
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              style={{
+                                background: "var(--surface)",
+                                border: snapshot.isDragging ? "1px solid var(--primary)" : "1px solid var(--border)",
+                                borderRadius: "var(--r-md)",
+                                padding: 12,
+                                boxShadow: snapshot.isDragging ? "0 8px 24px rgba(0,0,0,0.15)" : "0 2px 4px rgba(0,0,0,0.02)",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 8,
+                                cursor: role==="Viewer" ? "default" : "grab",
+                                opacity: snapshot.isDragging ? 0.9 : 1,
+                                transform: snapshot.isDragging ? "scale(1.02)" : "none",
+                                transition: "box-shadow 0.2s",
+                                ...provided.draggableProps.style
+                              }}
+                            >
+                              <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start"}}>
+                                <span style={{fontWeight: 600, fontSize: 13, color: "var(--text)"}}>{item.item}</span>
+                                <Badge label={item.priority} size="sm" />
+                              </div>
+                              <div style={{fontSize: 11, color: "var(--text-muted)"}}>
+                                {item.project} {[item.sector, item.phase].filter(Boolean).map(x=> `· ${x}`).join(" ")}
+                              </div>
+                              {item.targetDate && (
+                                <div style={{fontSize: 11, color: item.targetDate<today && status!=="Done" ? "var(--danger)" : "var(--text-muted)"}}>
+                                  📅 {fmtDate(item.targetDate)} {item.targetDate<today && status!=="Done" && "⚠️"}
+                                </div>
+                              )}
+                              <ProgressBar value={item.progress||0} color={status==="Blocked"?"var(--danger)":status==="Done"?"var(--success)":"var(--accent)"} />
+                              {role!=="Viewer"&&(
+                                <div style={{display:"flex", gap:4, marginTop: 4, flexWrap: "wrap"}}>
+                                  <button style={btnStyle("ghost","sm")} onClick={()=>setEditing(item)}>Edit</button>
+                                  {status!=="In Progress" && status!=="Done" && <button style={{...btnStyle("ghost","sm"), color:"var(--accent)"}} onClick={()=>changeStatus(item.id, "In Progress")}>Start</button>}
+                                  {status==="In Progress" && <button style={{...btnStyle("ghost","sm"), color:"var(--success)"}} onClick={()=>changeStatus(item.id, "Done")}>Done</button>}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                      {statusItems.length === 0 && !snapshot.isDraggingOver && (
+                        <div style={{padding: "20px", textAlign: "center", color: "var(--text-muted)", fontSize: 12, fontStyle: "italic"}}>
+                          No items
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Droppable>
+              );
+            })}
+          </div>
+        </DragDropContext>
       );
     }
     return filtered.length===0?<EmptyState icon="🗺️" title="No roadmap items" sub="Add your first item." action={<button style={btnStyle("primary")} onClick={()=>setShowForm(true)}>+ Add item</button>} />:(

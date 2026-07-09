@@ -1,12 +1,17 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Badge, Modal, Confirm, FormField, SectionCard, CollapsibleSection, btnStyle, inputStyle, toast } from "../components/ui/UI.jsx";
 import { fmtDate } from "../lib/helpers.js";
 import { saveLS, loadLS, getStorageSize } from "../lib/storage.js";
-import { PERMISSIONS, hasPermission } from "../lib/permissions.js";
+import { getPermissionsMatrix, PERMISSION_KEYS, saveCustomRoles, hasPermission } from "../lib/permissions.js";
 import { changePassword, checkPasswordStrength, registerPasskey, removePasskey as removePasskeyAuth, isPasskeySupported } from "../lib/auth.js";
 import { getWorkspaceMembers, addWorkspaceMember, updateWorkspaceMember, removeWorkspaceMember, getAuditLogs } from "../lib/storage-new.js";
 import { collection, query, where, getDocs, addDoc } from "firebase/firestore";
 import { db, isFirebaseConfigured } from "../lib/firebase.js";
+
+import APIKeysSection from "./Security/APIKeysSection.jsx";
+import DeviceManagementSection from "./Security/DeviceManagementSection.jsx";
+import IPAllowlistSection from "./Security/IPAllowlistSection.jsx";
+import TwoFactorSection from "./Security/TwoFactorSection.jsx";
 
 // ─────────────────────────────────────────────────────────────────────────
 // MODULE: SECURITY — 8 subtabs
@@ -18,9 +23,13 @@ const SUBTABS = [
   { id: "passkeys",    label: "Passkeys" },
   { id: "session",     label: "Session & Lock" },
   { id: "roles",       label: "Roles & Permissions" },
+  { id: "2fa",         label: "Two-Factor Auth" },
+  { id: "devices",     label: "Devices & Sessions" },
+  { id: "apikeys",     label: "API Keys" },
+  { id: "ip_allowlist",label: "IP Allowlist" },
   { id: "sensitive",   label: "Sensitive Actions" },
   { id: "dataprotect", label: "Data Protection" },
-  { id: "activity",    label: "Activity & Risk" },
+  { id: "activity",    label: "Advanced Audit Log" },
 ];
 
 export default function SecurityTab({ 
@@ -59,6 +68,7 @@ export default function SecurityTab({
   // authUserVersion is bumped after passkey changes to force a re-read.
   const [authUserVersion, setAuthUserVersion] = useState(0);
   const authUser     = useMemo(() => { try { return JSON.parse(localStorage.getItem("auth_user")    || "{}"); } catch { return {}; } }, [authUserVersion]);
+  const authSession  = useMemo(() => { try { return JSON.parse(localStorage.getItem("auth_session") || "{}"); } catch { return {}; } }, []);
   const loginHistory = useMemo(() => { try { return JSON.parse(localStorage.getItem("login_history") || "[]"); } catch { return []; } }, []);
 
   // Users state
@@ -68,8 +78,12 @@ export default function SecurityTab({
   const [workspaceUsers, setWorkspaceUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [firebaseAudit, setFirebaseAudit] = useState([]);
+  
+  // Advanced Audit Log state
+  const [auditFilterMod, setAuditFilterMod] = useState("All");
+  const [auditFilterSev, setAuditFilterSev] = useState("All");
 
-  const loadMembersAndAudit = async () => {
+  const loadMembersAndAudit = useCallback(async () => {
     if (!workspaceId) return;
     setUsersLoading(true);
     try {
@@ -86,30 +100,65 @@ export default function SecurityTab({
     } finally {
       setUsersLoading(false);
     }
-  };
+  }, [workspaceId]);
 
   useEffect(() => {
     loadMembersAndAudit();
-  }, [workspaceId]);
+  }, [loadMembersAndAudit]);
 
   // Use Firebase audit logs if available, otherwise fallback to local audit logs
   const displayAudit = firebaseAudit.length > 0 ? firebaseAudit : (audit || []);
 
-  const permMatrix = [
-    ["Feature", "Owner", "Admin", "Staff", "Viewer"],
-    ["View all data", "✅", "✅", "✅", "✅"],
-    ["Add contacts/leads", "✅", "✅", "✅", "❌"],
-    ["Edit contacts/leads", "✅", "✅", "✅", "❌"],
-    ["Delete contacts/leads", "✅", "✅", "❌", "❌"],
-    ["Add/edit invoices", "✅", "✅", "❌", "❌"],
-    ["Delete invoices", "✅", "✅", "❌", "❌"],
-    ["Add tasks/notes/follow-ups", "✅", "✅", "✅", "❌"],
-    ["Add communications/logs", "✅", "✅", "✅", "❌"],
-    ["Delete proposals/payments", "✅", "✅", "❌", "❌"],
-    ["Clear audit logs", "✅", "❌", "❌", "❌"],
-    ["Reset workspace data", "✅", "❌", "❌", "❌"],
-    ["Manage settings", "✅", "✅", "❌", "❌"],
-  ];
+  const [permissionsMatrix, setPermissionsMatrix] = useState(getPermissionsMatrix());
+  const [editingMatrix, setEditingMatrix] = useState(false);
+  const [newRoleName, setNewRoleName] = useState("");
+  
+  const handleSaveMatrix = () => {
+    // Save to LS via permissions.js
+    const customRolesOnly = {};
+    const defaultRoles = ["Owner", "Admin", "Staff", "Viewer"];
+    for (const r in permissionsMatrix) {
+      if (!defaultRoles.includes(r)) customRolesOnly[r] = permissionsMatrix[r];
+    }
+    saveCustomRoles(customRolesOnly);
+    setEditingMatrix(false);
+    toast("Permissions matrix saved");
+    addAudit("Security", "Update Permissions", "Updated custom roles and permissions matrix");
+  };
+
+  const handleTogglePermission = (r, key) => {
+    if (r === "Owner") return; // Owner is immutable
+    setPermissionsMatrix(prev => ({
+      ...prev,
+      [r]: {
+        ...prev[r],
+        [key]: !prev[r]?.[key]
+      }
+    }));
+  };
+
+  const handleAddRole = () => {
+    if (!newRoleName.trim()) return;
+    const r = newRoleName.trim();
+    if (permissionsMatrix[r]) {
+      toast("Role already exists", "error");
+      return;
+    }
+    setPermissionsMatrix(prev => ({
+      ...prev,
+      [r]: { ...prev.Viewer } // inherit from Viewer
+    }));
+    setNewRoleName("");
+  };
+
+  const handleDeleteRole = (r) => {
+    if (["Owner", "Admin", "Staff", "Viewer"].includes(r)) return;
+    setPermissionsMatrix(prev => {
+      const next = { ...prev };
+      delete next[r];
+      return next;
+    });
+  };
 
   const checklist = [
     ["Firebase Authentication active", isFirebaseConfigured()],
@@ -130,6 +179,21 @@ export default function SecurityTab({
     toast("Security settings saved");
   };
 
+  const downloadAuditCSV = () => {
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + "Timestamp,Module,Action,Description,Severity\n"
+      + displayAudit.map(e => `"${e.ts || e.timestamp}","${e.module}","${e.action}","${e.desc || e.description}","${e.severity || 'Info'}"`).join("\n");
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `audit_log_${new Date().getTime()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast("Audit log downloaded");
+  };
+
   const handleChangePassword = async () => {
     setPwMsg(null);
     if (!pwCurrent || !pwNew || !pwConfirm) { setPwMsg({ type: "error", text: "All fields are required." }); return; }
@@ -144,8 +208,9 @@ export default function SecurityTab({
       setPwCurrent(""); setPwNew(""); setPwConfirm("");
     } catch (err) {
       setPwMsg({ type: "error", text: err.message || "Failed to change password." });
+    } finally {
+      setPwChanging(false);
     }
-    setPwChanging(false);
   };
 
   const handleRegisterPasskey = async () => {
@@ -275,7 +340,7 @@ export default function SecurityTab({
   };
 
   // Calculate data stats for Data Protection tab
-  const dataStats = [
+  const dataStats = useMemo(() => [
     { label: "Contacts", count: (contacts || []).length },
     { label: "Leads", count: (leads || []).length },
     { label: "Projects", count: (projects || []).length },
@@ -296,12 +361,12 @@ export default function SecurityTab({
     { label: "Tags", count: (tags || []).length },
     { label: "Custom Fields", count: (customFields || []).length },
     { label: "Audit Logs", count: displayAudit.length },
-  ];
+  ], [contacts, leads, projects, tasks, followUps, notes, documents, invoices, payments, proposals, communications, calendarEvents, supportTickets, whatsappTemplates, promptHistory, projectLogs, roadmapItems, tags, customFields, displayAudit]);
 
   // Severity helpers — avoid repeating case-insensitive arrays throughout JSX
-  const isCritical = sev => ["Critical", "critical"].includes(sev);
-  const isWarning  = sev => ["Warning",  "warning" ].includes(sev);
-  const isSensitive = sev => ["Critical", "Warning", "high", "critical", "warning"].includes(sev);
+  const isCritical  = sev => sev?.toLowerCase() === "critical";
+  const isWarning   = sev => sev?.toLowerCase() === "warning";
+  const isSensitive = sev => ["critical", "warning", "high"].includes(sev?.toLowerCase());
 
   // Derived once; used in both Quick Stats and Data Overview
   const totalRecords = dataStats.reduce((sum, s) => sum + s.count, 0);
@@ -325,16 +390,52 @@ export default function SecurityTab({
   );
 
   return (
-    <div>
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--text)" }}>Security</h2>
-        <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>Authentication, sessions, roles, and data protection settings</p>
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <div className="module-header">
+        <div className="module-header-left">
+          <h2>Security & Settings</h2>
+          <p>Authentication, sessions, roles, and data protection settings</p>
+        </div>
       </div>
 
-      {/* Subtab bar */}
-      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", marginBottom: 24, overflowX: "auto" }}>
-        {SUBTABS.map(t => <button key={t.id} style={subTabBtn(t.id)} onClick={() => setActiveSubtab(t.id)}>{t.label}</button>)}
-      </div>
+      <div style={{ display: "flex", gap: 32, alignItems: "flex-start", flex: 1 }}>
+        {/* Vertical Subtab Nav (Glassmorphic) */}
+        <div style={{ 
+          width: 260, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6,
+          background: "var(--glass-bg)", backdropFilter: "var(--glass-blur)",
+          WebkitBackdropFilter: "var(--glass-blur)",
+          border: "1px solid var(--glass-border)", borderRadius: "var(--r-xl)",
+          padding: 16, boxShadow: "var(--shadow-md)"
+        }}>
+          {SUBTABS.map(t => {
+            const isActive = activeSubtab === t.id;
+            return (
+              <button 
+                key={t.id} 
+                onClick={() => setActiveSubtab(t.id)} 
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  background: isActive ? "var(--nav-active-bg)" : "transparent",
+                  color: isActive ? "var(--accent)" : "var(--text)",
+                  borderRadius: "var(--r-md)",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontWeight: isActive ? 600 : 500,
+                  transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                  boxShadow: isActive ? "inset 0 1px 1px rgba(255,255,255,0.05), 0 0 10px var(--accent-dim)" : "none",
+                  transform: isActive ? "translateX(4px)" : "none"
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Content Area */}
+        <div style={{ flex: 1, minWidth: 0 }}>
 
       {/* ── OVERVIEW ── */}
       {activeSubtab === "overview" && (
@@ -484,10 +585,8 @@ export default function SecurityTab({
             <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 7 }}>
               <div><span style={{ color: "var(--text-muted)" }}>User: </span><strong>{authUser.ownerName || authUser.email || user?.ownerName || "—"}</strong></div>
               <div><span style={{ color: "var(--text-muted)" }}>Role: </span><Badge label={role} /></div>
-              {(() => { let s = {}; try { s = JSON.parse(localStorage.getItem("auth_session") || "{}"); } catch {} return (<>
-              <div><span style={{ color: "var(--text-muted)" }}>Session started: </span><strong>{s.sessionStartedAt ? new Date(s.sessionStartedAt).toLocaleString() : "—"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>Last active: </span><strong>{s.lastActiveAt ? new Date(s.lastActiveAt).toLocaleString() : "—"}</strong></div>
-              </>); })()}
+              <div><span style={{ color: "var(--text-muted)" }}>Session started: </span><strong>{authSession.sessionStartedAt ? new Date(authSession.sessionStartedAt).toLocaleString() : "—"}</strong></div>
+              <div><span style={{ color: "var(--text-muted)" }}>Last active: </span><strong>{authSession.lastActiveAt ? new Date(authSession.lastActiveAt).toLocaleString() : "—"}</strong></div>
             </div>
           </SectionCard>
         </div>
@@ -506,17 +605,18 @@ export default function SecurityTab({
                 addAudit("Security", "Change Role", `Changed active role to ${e.target.value}`);
                 toast(`Role set to ${e.target.value}`); 
               }}>
-                {["Owner", "Admin", "Staff", "Viewer"].map(r => <option key={r}>{r}</option>)}
+                {Object.keys(permissionsMatrix).map(r => <option key={r}>{r}</option>)}
               </select>
             </FormField>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
-              Active permissions: {Object.entries(PERMISSIONS[role] || {}).filter(([,v]) => v).length} / {Object.keys(PERMISSIONS.Owner || {}).length}
+              Active permissions: {Object.entries(permissionsMatrix[role] || {}).filter(([,v]) => v).length} / {PERMISSION_KEYS.length}
             </div>
             <div style={{ marginTop: 12, fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-              <div><strong>Owner:</strong> Full access — all actions, settings, data reset, audit clear</div>
-              <div><strong>Admin:</strong> Can manage most data but cannot reset workspace or clear audit logs</div>
-              <div><strong>Staff:</strong> Can add contacts, tasks, notes, and communications. No invoices or deletes.</div>
-              <div><strong>Viewer:</strong> Read-only. Cannot create or edit any records.</div>
+              <div><strong>Owner:</strong> Full access (Immutable)</div>
+              <div><strong>Admin:</strong> Can manage most data but cannot reset workspace</div>
+              <div><strong>Staff:</strong> Can add items, but cannot delete or edit invoices</div>
+              <div><strong>Viewer:</strong> Read-only access</div>
+              <div><em>Custom roles inherit from Viewer by default.</em></div>
             </div>
           </SectionCard>
 
@@ -533,9 +633,7 @@ export default function SecurityTab({
                 </FormField>
                 <FormField label="Role">
                   <select style={inputStyle} value={newUserRole} onChange={e => setNewUserRole(e.target.value)}>
-                    <option value="Admin">Admin</option>
-                    <option value="Staff">Staff</option>
-                    <option value="Viewer">Viewer</option>
+                    {Object.keys(permissionsMatrix).filter(r => r !== "Owner").map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </FormField>
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -559,9 +657,7 @@ export default function SecurityTab({
                     {u.role !== "Owner" && (
                       <>
                         <select style={{ ...inputStyle, padding: "4px 8px", fontSize: 12 }} value={u.role} onChange={(e) => handleUpdateUserRole(u.userId, e.target.value)}>
-                          <option value="Admin">Admin</option>
-                          <option value="Staff">Staff</option>
-                          <option value="Viewer">Viewer</option>
+                          {Object.keys(permissionsMatrix).filter(r => r !== "Owner").map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                         <button style={{ ...btnStyle("ghost", "xs") }} onClick={() => handleToggleUserActive(u.userId, u.active)}>
                           {u.active ? "Deactivate" : "Activate"}
@@ -575,15 +671,70 @@ export default function SecurityTab({
             </div>
           </SectionCard>
 
-          <CollapsibleSection title="Permission Matrix" defaultOpen={true} style={{ gridColumn: "1 / -1" }}>
-            <div style={{ overflowX: "auto" }}>
+          <CollapsibleSection title="Custom Permissions Matrix" defaultOpen={true} style={{ gridColumn: "1 / -1" }}>
+            <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input 
+                  style={{ ...inputStyle, width: 200 }} 
+                  placeholder="New role name..." 
+                  value={newRoleName} 
+                  onChange={e => setNewRoleName(e.target.value)} 
+                />
+                <button style={btnStyle("ghost")} onClick={handleAddRole}>Add Role</button>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {editingMatrix ? (
+                  <>
+                    <button style={btnStyle("ghost")} onClick={() => { setEditingMatrix(false); setPermissionsMatrix(getPermissionsMatrix()); }}>Cancel</button>
+                    <button style={btnStyle("primary")} onClick={handleSaveMatrix}>Save Matrix</button>
+                  </>
+                ) : (
+                  <button style={btnStyle("outline")} onClick={() => setEditingMatrix(true)}>Edit Permissions</button>
+                )}
+              </div>
+            </div>
+
+            <div style={{ overflowX: "auto", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead><tr>{permMatrix[0].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: h === "Feature" ? "left" : "center", fontWeight: 600, color: "var(--text-muted)", fontSize: 11, textTransform: "uppercase", background: "var(--surface)", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
-                <tbody>{permMatrix.slice(1).map((row, i) => (
-                  <tr key={i} style={{ borderTop: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "var(--stripe)" }}>
-                    {row.map((cell, j) => <td key={j} style={{ padding: "8px 12px", color: j === 0 ? "var(--text)" : "var(--text-muted)", fontWeight: j === 0 ? 500 : 400, textAlign: j === 0 ? "left" : "center" }}>{cell}</td>)}
+                <thead>
+                  <tr>
+                    <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: 11, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>Feature</th>
+                    {Object.keys(permissionsMatrix).map(r => (
+                      <th key={r} style={{ padding: "12px 16px", textAlign: "center", fontWeight: 600, color: "var(--text-muted)", fontSize: 11, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                          {r}
+                          {editingMatrix && !["Owner", "Admin", "Staff", "Viewer"].includes(r) && (
+                            <button style={{ ...btnStyle("ghost", "xs"), color: "var(--danger)", padding: "2px 4px" }} onClick={() => handleDeleteRole(r)}>Delete</button>
+                          )}
+                        </div>
+                      </th>
+                    ))}
                   </tr>
-                ))}</tbody>
+                </thead>
+                <tbody>
+                  {PERMISSION_KEYS.map((perm, i) => (
+                    <tr key={perm.key} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "var(--stripe)" }}>
+                      <td style={{ padding: "12px 16px", color: "var(--text)", fontWeight: 500 }}>
+                        {perm.label}
+                        <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{perm.group}</div>
+                      </td>
+                      {Object.keys(permissionsMatrix).map(r => (
+                        <td key={r} style={{ padding: "12px 16px", textAlign: "center" }}>
+                          {editingMatrix && r !== "Owner" ? (
+                            <input 
+                              type="checkbox" 
+                              checked={!!permissionsMatrix[r]?.[perm.key]}
+                              onChange={() => handleTogglePermission(r, perm.key)}
+                              style={{ cursor: "pointer", width: 16, height: 16 }}
+                            />
+                          ) : (
+                            permissionsMatrix[r]?.[perm.key] ? "✅" : "❌"
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
           </CollapsibleSection>
@@ -692,7 +843,7 @@ export default function SecurityTab({
         </div>
       )}
 
-      {/* ── ACTIVITY & RISK ── */}
+      {/* ── ACTIVITY & RISK (ADVANCED AUDIT LOG) ── */}
       {activeSubtab === "activity" && (
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginBottom: 16 }}>
@@ -727,6 +878,63 @@ export default function SecurityTab({
           </div>
 
           <SectionCard>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Advanced Audit Log</div>
+              <button style={btnStyle("ghost", "sm")} onClick={downloadAuditCSV}>📥 Export CSV</button>
+            </div>
+            
+            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              <select style={inputStyle} value={auditFilterMod} onChange={e => setAuditFilterMod(e.target.value)}>
+                <option value="All">All Modules</option>
+                <option value="Security">Security</option>
+                <option value="Auth">Auth</option>
+                <option value="Contacts">Contacts</option>
+                <option value="Invoices">Invoices</option>
+              </select>
+              <select style={inputStyle} value={auditFilterSev} onChange={e => setAuditFilterSev(e.target.value)}>
+                <option value="All">All Severities</option>
+                <option value="critical">Critical</option>
+                <option value="warning">Warning</option>
+                <option value="info">Info</option>
+              </select>
+            </div>
+
+            <div style={{ maxHeight: 400, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead style={{ position: "sticky", top: 0, background: "var(--surface)", zIndex: 1 }}>
+                  <tr>
+                    <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: 11, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>Time</th>
+                    <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: 11, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>Module / Action</th>
+                    <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: 11, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>Details</th>
+                    <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: 11, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>Severity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayAudit
+                    .filter(a => auditFilterMod === "All" || a.module === auditFilterMod)
+                    .filter(a => auditFilterSev === "All" || (a.severity || "info").toLowerCase() === auditFilterSev.toLowerCase())
+                    .map((entry, idx) => (
+                    <tr key={entry.id || idx} style={{ borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "8px 12px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{entry.ts || entry.timestamp ? new Date(entry.ts || entry.timestamp).toLocaleString() : ""}</td>
+                      <td style={{ padding: "8px 12px" }}>
+                        <div style={{ fontWeight: 600 }}>{entry.action}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{entry.module}</div>
+                      </td>
+                      <td style={{ padding: "8px 12px", color: "var(--text)" }}>{entry.desc || entry.description}</td>
+                      <td style={{ padding: "8px 12px" }}>
+                        <Badge label={entry.severity || "info"} style={{ 
+                          background: isCritical(entry.severity) ? "var(--danger-dim)" : isWarning(entry.severity) ? "var(--warning-dim)" : "var(--surface-raised)", 
+                          color: isCritical(entry.severity) ? "var(--danger)" : isWarning(entry.severity) ? "var(--warning)" : "var(--text-muted)" 
+                        }} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+
+          <SectionCard style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Login History</div>
             {(loginHistory || []).length === 0 ? (
               <div style={{ fontSize: 12, color: "var(--text-muted)", padding: 16, textAlign: "center", background: "var(--surface-raised)", borderRadius: "var(--r-md)" }}>No login history yet. Events are recorded after each login.</div>
@@ -755,6 +963,12 @@ export default function SecurityTab({
           {!isFirebaseConfigured() && infoBox("warning", "⚠️ Frontend-only security: IP addresses, device fingerprinting, and real-time threat detection require a backend. Login history is stored locally and could be cleared by the user. This is informational only.")}
         </div>
       )}
+      {activeSubtab === "2fa" && <TwoFactorSection addAudit={addAudit} />}
+      {activeSubtab === "devices" && <DeviceManagementSection addAudit={addAudit} />}
+      {activeSubtab === "apikeys" && <APIKeysSection addAudit={addAudit} />}
+      {activeSubtab === "ip_allowlist" && <IPAllowlistSection addAudit={addAudit} />}
+        </div>
+      </div>
     </div>
   );
 }

@@ -18,6 +18,10 @@ export default function ProjectForm({ initial = {}, onSave, onClose, roadmapItem
     progress: 0, 
     techStack: "", 
     priority: "Medium", 
+    category: "Software",
+    deliverables: "",
+    milestones: "",
+    assignees: "",
     description: "", 
     tags: [], 
     contactId: "",
@@ -71,31 +75,47 @@ export default function ProjectForm({ initial = {}, onSave, onClose, roadmapItem
   }, [f, budget, paid, pending, onSave]);
 
   return (
-    <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <FormField label="Project name" required>
-          <input style={{ ...inputStyle, borderColor: errors.name ? "#ef4444" : undefined }} value={f.name} onChange={set("name")} placeholder="e.g. Brand Redesign" />
-          {errors.name && <div style={ERR_STYLE}>{errors.name}</div>}
-        </FormField>
-        <FormField label="Client"><input style={inputStyle} value={f.client} onChange={set("client")} /></FormField>
-        <FormField label="Industry"><input style={inputStyle} value={f.industry} onChange={set("industry")} /></FormField>
-        <FormField label="Status"><select style={inputStyle} value={f.status} onChange={setStatus}>{PROJECT_STATUSES.map(s => <option key={s}>{s}</option>)}</select></FormField>
-        <FormField label="Priority"><select style={inputStyle} value={f.priority} onChange={set("priority")}>{PROJECT_PRIORITIES.map(s => <option key={s}>{s}</option>)}</select></FormField>
-        <FormField label="Start date"><input style={inputStyle} type="date" value={f.startDate} onChange={set("startDate")} /></FormField>
-        <FormField label="Deadline">
-          <input style={{ ...inputStyle, borderColor: errors.deadline ? "#ef4444" : undefined }} type="date" value={f.deadline} onChange={set("deadline")} />
-          {errors.deadline && <div style={ERR_STYLE}>{errors.deadline}</div>}
-        </FormField>
-        <FormField label="Budget (₹)"><input style={inputStyle} type="number" min="0" value={f.budget} onChange={set("budget")} /></FormField>
-        <FormField label="Paid (₹)">
-          <input style={{ ...inputStyle, borderColor: errors.paid ? "#ef4444" : undefined }} type="number" min="0" value={f.paid} onChange={set("paid")} />
-          {errors.paid && <div style={ERR_STYLE}>{errors.paid}</div>}
-        </FormField>
-        <FormField label="Progress %">
-          <input style={{ ...inputStyle, borderColor: errors.progress ? "#ef4444" : undefined }} type="number" min="0" max="100" value={f.progress} onChange={setProgress} />
-          {errors.progress && <div style={ERR_STYLE}>{errors.progress}</div>}
-        </FormField>
-        <FormField label="Tech stack"><input style={inputStyle} value={f.techStack} onChange={set("techStack")} placeholder="React, Node.js, etc." /></FormField>
+    <div style={{ padding: "0 10px" }}>
+      <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+        <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>Core Details</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "0 16px" }}>
+          <FormField label="Project Name" required>
+            <input style={{ ...inputStyle, fontSize: 16, fontWeight: 500, padding: "10px 12px", borderColor: errors.name ? "#ef4444" : undefined }} value={f.name} onChange={set("name")} placeholder="e.g. Acme Website Redesign" />
+            {errors.name && <div style={ERR_STYLE}>{errors.name}</div>}
+          </FormField>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px", marginTop: 16 }}>
+          <FormField label="Client"><input style={inputStyle} value={f.client} onChange={set("client")} /></FormField>
+          <FormField label="Industry"><input style={inputStyle} value={f.industry} onChange={set("industry")} /></FormField>
+          <FormField label="Status"><select style={inputStyle} value={f.status} onChange={setStatus}>{PROJECT_STATUSES.map(s => <option key={s}>{s}</option>)}</select></FormField>
+          <FormField label="Priority"><select style={inputStyle} value={f.priority} onChange={set("priority")}>{PROJECT_PRIORITIES.map(s => <option key={s}>{s}</option>)}</select></FormField>
+          <FormField label="Category"><select style={inputStyle} value={f.category} onChange={set("category")}><option>Software</option><option>Design</option><option>Marketing</option><option>Consulting</option><option>Other</option></select></FormField>
+          <FormField label="Assignees / Team"><input style={inputStyle} value={f.assignees} onChange={set("assignees")} placeholder="e.g. John, Alice" /></FormField>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+        <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>Timeline & Financials</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+          <FormField label="Start Date"><input style={inputStyle} type="date" value={f.startDate} onChange={set("startDate")} /></FormField>
+          <FormField label="Deadline">
+            <input style={{ ...inputStyle, borderColor: errors.deadline ? "#ef4444" : undefined }} type="date" value={f.deadline} onChange={set("deadline")} />
+            {errors.deadline && <div style={ERR_STYLE}>{errors.deadline}</div>}
+          </FormField>
+          <FormField label="Budget (₹)"><input style={inputStyle} type="number" min="0" value={f.budget} onChange={set("budget")} /></FormField>
+          <FormField label="Paid (₹)">
+            <input style={{ ...inputStyle, borderColor: errors.paid ? "#ef4444" : undefined }} type="number" min="0" value={f.paid} onChange={set("paid")} />
+            {errors.paid && <div style={ERR_STYLE}>{errors.paid}</div>}
+          </FormField>
+          <FormField label="Tech Stack"><input style={inputStyle} value={f.techStack} onChange={set("techStack")} placeholder="React, Node.js, etc." /></FormField>
+          <FormField label="Progress %">
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input type="range" min="0" max="100" step="5" value={f.progress} onChange={setProgress} style={{ flex: 1, accentColor: "var(--primary)" }} />
+              <span style={{ fontSize: 13, fontWeight: 600, width: 36, textAlign: "right", color: errors.progress ? "#ef4444" : "var(--text)" }}>{f.progress}%</span>
+            </div>
+            {errors.progress && <div style={ERR_STYLE}>{errors.progress}</div>}
+          </FormField>
+        </div>
       </div>
 
       {budget > 0 && (
@@ -168,16 +188,23 @@ export default function ProjectForm({ initial = {}, onSave, onClose, roadmapItem
           )}
         </FormField>
       )}
-      <FormField label="Description"><textarea style={{ ...inputStyle, minHeight: 72, resize: "vertical" }} value={f.description} onChange={set("description")} placeholder="Project scope, objectives, deliverables..." /></FormField>
-      <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 8, alignItems: "center" }}>
+      <div style={{ marginBottom: 20 }}>
+        <h3 style={{ margin: "0 0 16px 0", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>Scope & Deliverables</h3>
+        <FormField label="Key Deliverables"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={f.deliverables} onChange={set("deliverables")} placeholder="What are the final outputs? (e.g. Figma files, Source Code)" /></FormField>
+        <FormField label="Milestones"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={f.milestones} onChange={set("milestones")} placeholder="List key dates/milestones (e.g. Beta on Oct 1st)" /></FormField>
+        <FormField label="Full Description"><textarea style={{ ...inputStyle, minHeight: 90, resize: "vertical" }} value={f.description} onChange={set("description")} placeholder="Comprehensive project scope, objectives, requirements..." /></FormField>
+      </div>
+      <div style={{ display: "flex", gap: 12, justifyContent: "space-between", marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--border)", alignItems: "center" }}>
         <button
-          style={{ fontSize: 11, padding: "4px 12px", borderRadius: 6, border: "1px solid #bbf7d0", background: f.status === "Completed" ? "#10b98122" : "transparent", color: "#10b981", cursor: "pointer", fontWeight: 500 }}
+          style={{ fontSize: 12, padding: "8px 14px", borderRadius: 8, border: "1px solid #bbf7d0", background: f.status === "Completed" ? "#10b98122" : "transparent", color: "#10b981", cursor: "pointer", fontWeight: 600 }}
           onClick={() => setF(p => ({ ...p, status: "Completed", progress: 100 }))}
           type="button"
-        >✓ Mark complete</button>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button style={btnStyle("ghost")} onClick={onClose}>Cancel</button>
-          <button style={btnStyle("primary")} onClick={handleSave}>Save project</button>
+        >✓ Mark as Complete</button>
+        <div style={{ display: "flex", gap: 12 }}>
+          <button style={{ ...btnStyle("ghost"), padding: "10px 20px" }} onClick={onClose}>Cancel</button>
+          <button style={{ ...btnStyle("primary"), padding: "10px 24px", fontSize: 14 }} onClick={handleSave}>
+            {initial.id ? "Update Project" : "Create Project"}
+          </button>
         </div>
       </div>
     </div>

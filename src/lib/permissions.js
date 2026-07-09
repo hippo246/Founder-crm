@@ -1,6 +1,8 @@
-// ─── Permission Matrix ─────────────────────────────────────────────────────────────
+import { loadLS, saveLS } from "./storage.js";
 
-export const PERMISSIONS = {
+// ─── Default Permission Matrix ───────────────────────────────────────────────────
+
+export const DEFAULT_PERMISSIONS = {
   Owner: {
     viewAll: true,
     addContactsLeads: true,
@@ -59,10 +61,40 @@ export const PERMISSIONS = {
   },
 };
 
-export const hasPermission = (role, permission) => {
-  return PERMISSIONS[role]?.[permission] || false;
+// Permission keys metadata for UI rendering
+export const PERMISSION_KEYS = [
+  { key: "viewAll", label: "View all CRM data", group: "General" },
+  { key: "addContactsLeads", label: "Add Contacts & Leads", group: "CRM" },
+  { key: "editContactsLeads", label: "Edit Contacts & Leads", group: "CRM" },
+  { key: "deleteContactsLeads", label: "Delete Contacts & Leads", group: "CRM" },
+  { key: "addTasksNotesFollowUps", label: "Add Tasks & Notes", group: "Activity" },
+  { key: "addCommunicationsLogs", label: "Add Communications", group: "Activity" },
+  { key: "addEditInvoices", label: "Add/Edit Invoices", group: "Finance" },
+  { key: "deleteInvoices", label: "Delete Invoices", group: "Finance" },
+  { key: "deleteProposalsPayments", label: "Delete Proposals/Payments", group: "Finance" },
+  { key: "manageSettings", label: "Manage Settings", group: "System" },
+  { key: "clearAuditLogs", label: "Clear Audit Logs", group: "System" },
+  { key: "resetWorkspaceData", label: "Reset Workspace Data", group: "System" },
+];
+
+/**
+ * Get the current active permission matrix (Defaults + Custom Roles)
+ */
+export const getPermissionsMatrix = () => {
+  const customRoles = loadLS("custom_roles", {});
+  return { ...DEFAULT_PERMISSIONS, ...customRoles };
 };
 
+export const saveCustomRoles = (customRoles) => {
+  saveLS("custom_roles", customRoles);
+};
+
+export const hasPermission = (role, permission) => {
+  const matrix = getPermissionsMatrix();
+  return matrix[role]?.[permission] || false;
+};
+
+// Granular check wrappers used across the app
 export const canAddContacts = (role) => hasPermission(role, 'addContactsLeads');
 export const canEditContacts = (role) => hasPermission(role, 'editContactsLeads');
 export const canDeleteContacts = (role) => hasPermission(role, 'deleteContactsLeads');
