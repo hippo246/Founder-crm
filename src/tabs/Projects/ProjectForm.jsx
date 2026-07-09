@@ -4,7 +4,7 @@ const ERR_STYLE = { fontSize: 11, color: "#ef4444", marginTop: 2 };
 import { FormField, inputStyle, btnStyle, toast } from "../../components/ui/UI.jsx";
 import { PROJECT_STATUSES, PROJECT_PRIORITIES } from "../../config/crmConfig.js";
 
-export default function ProjectForm({ initial = {}, onSave, onClose }) {
+export default function ProjectForm({ initial = {}, onSave, onClose, roadmapItems = [] }) {
   const [f, setF] = useState({ 
     name: "", 
     client: "", 
@@ -21,14 +21,28 @@ export default function ProjectForm({ initial = {}, onSave, onClose }) {
     description: "", 
     tags: [], 
     contactId: "",
+    linkedRoadmapItemIds: [],
     createdAt: new Date().toISOString().slice(0, 10), 
     ...initial,
     tags: Array.isArray(initial?.tags) ? initial.tags : [],
+    linkedRoadmapItemIds: Array.isArray(initial?.linkedRoadmapItemIds) ? initial.linkedRoadmapItemIds : [],
   });
   const [tagInput, setTagInput] = useState("");
   const [errors, setErrors] = useState({});
 
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
+
+  // Auto-sync: when status → Completed, bump progress to 100
+  const setStatus = e => {
+    const val = e.target.value;
+    setF(p => ({ ...p, status: val, progress: val === "Completed" ? 100 : p.progress }));
+  };
+
+  // Auto-sync: when progress hits 100, suggest Completed
+  const setProgress = e => {
+    const val = e.target.value;
+    setF(p => ({ ...p, progress: val, status: Number(val) === 100 && p.status !== "Completed" ? "Completed" : p.status }));
+  };
 
   const budget = Number(f.budget) || 0;
   const paid = Number(f.paid) || 0;
@@ -65,7 +79,7 @@ export default function ProjectForm({ initial = {}, onSave, onClose }) {
         </FormField>
         <FormField label="Client"><input style={inputStyle} value={f.client} onChange={set("client")} /></FormField>
         <FormField label="Industry"><input style={inputStyle} value={f.industry} onChange={set("industry")} /></FormField>
-        <FormField label="Status"><select style={inputStyle} value={f.status} onChange={set("status")}>{PROJECT_STATUSES.map(s => <option key={s}>{s}</option>)}</select></FormField>
+        <FormField label="Status"><select style={inputStyle} value={f.status} onChange={setStatus}>{PROJECT_STATUSES.map(s => <option key={s}>{s}</option>)}</select></FormField>
         <FormField label="Priority"><select style={inputStyle} value={f.priority} onChange={set("priority")}>{PROJECT_PRIORITIES.map(s => <option key={s}>{s}</option>)}</select></FormField>
         <FormField label="Start date"><input style={inputStyle} type="date" value={f.startDate} onChange={set("startDate")} /></FormField>
         <FormField label="Deadline">
@@ -78,7 +92,7 @@ export default function ProjectForm({ initial = {}, onSave, onClose }) {
           {errors.paid && <div style={ERR_STYLE}>{errors.paid}</div>}
         </FormField>
         <FormField label="Progress %">
-          <input style={{ ...inputStyle, borderColor: errors.progress ? "#ef4444" : undefined }} type="number" min="0" max="100" value={f.progress} onChange={set("progress")} />
+          <input style={{ ...inputStyle, borderColor: errors.progress ? "#ef4444" : undefined }} type="number" min="0" max="100" value={f.progress} onChange={setProgress} />
           {errors.progress && <div style={ERR_STYLE}>{errors.progress}</div>}
         </FormField>
         <FormField label="Tech stack"><input style={inputStyle} value={f.techStack} onChange={set("techStack")} placeholder="React, Node.js, etc." /></FormField>
@@ -125,10 +139,46 @@ export default function ProjectForm({ initial = {}, onSave, onClose }) {
         )}
       </FormField>
 
+      {roadmapItems.length > 0 && (
+        <FormField label="Linked roadmap items" hint="Hold Ctrl/Cmd to select multiple">
+          <select
+            multiple
+            style={{ ...inputStyle, minHeight: 90, resize: "vertical" }}
+            value={f.linkedRoadmapItemIds}
+            onChange={e => {
+              const selected = Array.from(e.target.selectedOptions).map(o => o.value);
+              setF(p => ({ ...p, linkedRoadmapItemIds: selected }));
+            }}
+          >
+            {roadmapItems.map(r => (
+              <option key={r.id} value={r.id}>
+                {r.item}{r.sector ? ` — ${r.sector}` : ""}{r.phase ? ` › ${r.phase}` : ""} [{r.status}]
+              </option>
+            ))}
+          </select>
+          {f.linkedRoadmapItemIds.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+              {f.linkedRoadmapItemIds.length} item{f.linkedRoadmapItemIds.length !== 1 ? "s" : ""} selected
+              <button
+                type="button"
+                style={{ marginLeft: 8, fontSize: 10, padding: "1px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}
+                onClick={() => setF(p => ({ ...p, linkedRoadmapItemIds: [] }))}
+              >Clear</button>
+            </div>
+          )}
+        </FormField>
+      )}
       <FormField label="Description"><textarea style={{ ...inputStyle, minHeight: 72, resize: "vertical" }} value={f.description} onChange={set("description")} placeholder="Project scope, objectives, deliverables..." /></FormField>
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-        <button style={btnStyle("ghost")} onClick={onClose}>Cancel</button>
-        <button style={btnStyle("primary")} onClick={handleSave}>Save project</button>
+      <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 8, alignItems: "center" }}>
+        <button
+          style={{ fontSize: 11, padding: "4px 12px", borderRadius: 6, border: "1px solid #bbf7d0", background: f.status === "Completed" ? "#10b98122" : "transparent", color: "#10b981", cursor: "pointer", fontWeight: 500 }}
+          onClick={() => setF(p => ({ ...p, status: "Completed", progress: 100 }))}
+          type="button"
+        >✓ Mark complete</button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button style={btnStyle("ghost")} onClick={onClose}>Cancel</button>
+          <button style={btnStyle("primary")} onClick={handleSave}>Save project</button>
+        </div>
       </div>
     </div>
   );

@@ -1,0 +1,270 @@
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isSelf(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function getWorkspace(workspaceId) {
+      return get(/databases/$(database)/documents/workspaces/$(workspaceId)).data;
+    }
+    
+    function getMember(workspaceId) {
+      return get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data;
+    }
+    
+    function isMember(workspaceId) {
+      let member = getMember(workspaceId);
+      return isAuthenticated() && member != null && member.active == true;
+    }
+    
+    function memberRole(workspaceId) {
+      let member = getMember(workspaceId);
+      return member != null ? member.role : null;
+    }
+    
+    function isOwner(workspaceId) {
+      let workspace = getWorkspace(workspaceId);
+      return isAuthenticated() && workspace.ownerId == request.auth.uid;
+    }
+    
+    function isAdmin(workspaceId) {
+      return memberRole(workspaceId) == 'Admin';
+    }
+    
+    function isStaff(workspaceId) {
+      return memberRole(workspaceId) == 'Staff';
+    }
+    
+    function isViewer(workspaceId) {
+      return memberRole(workspaceId) == 'Viewer';
+    }
+    
+    function canManageUsers(workspaceId) {
+      return isOwner(workspaceId);
+    }
+    
+    function canManageSettings(workspaceId) {
+      return isOwner(workspaceId) || isAdmin(workspaceId);
+    }
+    
+    function canDeleteAuditLogs(workspaceId) {
+      return isOwner(workspaceId);
+    }
+    
+    function canDeleteWorkspace(workspaceId) {
+      return isOwner(workspaceId);
+    }
+    
+    function hasModulePermission(workspaceId, module, action) {
+      let member = getMember(workspaceId);
+      if (member == null || member.active != true) return false;
+      
+      let permissions = member.permissions;
+      if (permissions == null) {
+        return false;
+      }
+      
+      let modulePerms = permissions[module];
+      if (modulePerms == null) return false;
+      
+      return action in modulePerms;
+    }
+    
+    function canViewModule(workspaceId, module) {
+      return hasModulePermission(workspaceId, module, 'view') || isOwner(workspaceId);
+    }
+    
+    function canCreateModule(workspaceId, module) {
+      return hasModulePermission(workspaceId, module, 'create') || isOwner(workspaceId);
+    }
+    
+    function canUpdateModule(workspaceId, module) {
+      return hasModulePermission(workspaceId, module, 'update') || isOwner(workspaceId);
+    }
+    
+    function canDeleteModule(workspaceId, module) {
+      return hasModulePermission(workspaceId, module, 'delete') || isOwner(workspaceId);
+    }
+    
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isSelf(userId) || canManageUsers(userId));
+      allow write: if isSelf(userId);
+    }
+    
+    match /workspaces/{workspaceId} {
+      allow read: if isMember(workspaceId) || isOwner(workspaceId);
+      allow create: if isAuthenticated();
+      allow update: if isOwner(workspaceId) || canManageSettings(workspaceId);
+      allow delete: if canDeleteWorkspace(workspaceId);
+      
+      match /members/{userId} {
+        allow read: if isMember(workspaceId) && (isSelf(userId) || canManageUsers(workspaceId));
+        allow create: if canManageUsers(workspaceId);
+        allow update: if canManageUsers(workspaceId) || isSelf(userId);
+        allow delete: if canManageUsers(workspaceId);
+      }
+      
+      match /invites/{inviteId} {
+        allow read: if isMember(workspaceId) || canManageUsers(workspaceId);
+        allow create: if canManageUsers(workspaceId);
+        allow update: if canManageUsers(workspaceId);
+        allow delete: if canManageUsers(workspaceId);
+      }
+      
+      match /settings/main {
+        allow read: if isMember(workspaceId);
+        allow write: if canManageSettings(workspaceId);
+      }
+      
+      match /contacts/{contactId} {
+        allow read: if canViewModule(workspaceId, 'contacts');
+        allow create: if canCreateModule(workspaceId, 'contacts');
+        allow update: if canUpdateModule(workspaceId, 'contacts');
+        allow delete: if canDeleteModule(workspaceId, 'contacts');
+      }
+      
+      match /leads/{leadId} {
+        allow read: if canViewModule(workspaceId, 'leads');
+        allow create: if canCreateModule(workspaceId, 'leads');
+        allow update: if canUpdateModule(workspaceId, 'leads');
+        allow delete: if canDeleteModule(workspaceId, 'leads');
+      }
+      
+      match /projects/{projectId} {
+        allow read: if canViewModule(workspaceId, 'projects');
+        allow create: if canCreateModule(workspaceId, 'projects');
+        allow update: if canUpdateModule(workspaceId, 'projects');
+        allow delete: if canDeleteModule(workspaceId, 'projects');
+      }
+      
+      match /tasks/{taskId} {
+        allow read: if canViewModule(workspaceId, 'tasks');
+        allow create: if canCreateModule(workspaceId, 'tasks');
+        allow update: if canUpdateModule(workspaceId, 'tasks');
+        allow delete: if canDeleteModule(workspaceId, 'tasks');
+      }
+      
+      match /followUps/{followUpId} {
+        allow read: if canViewModule(workspaceId, 'followUps');
+        allow create: if canCreateModule(workspaceId, 'followUps');
+        allow update: if canUpdateModule(workspaceId, 'followUps');
+        allow delete: if canDeleteModule(workspaceId, 'followUps');
+      }
+      
+      match /notes/{noteId} {
+        allow read: if canViewModule(workspaceId, 'notes');
+        allow create: if canCreateModule(workspaceId, 'notes');
+        allow update: if canUpdateModule(workspaceId, 'notes');
+        allow delete: if canDeleteModule(workspaceId, 'notes');
+      }
+      
+      match /documents/{documentId} {
+        allow read: if canViewModule(workspaceId, 'documents');
+        allow create: if canCreateModule(workspaceId, 'documents');
+        allow update: if canUpdateModule(workspaceId, 'documents');
+        allow delete: if canDeleteModule(workspaceId, 'documents');
+      }
+      
+      match /invoices/{invoiceId} {
+        allow read: if canViewModule(workspaceId, 'invoices');
+        allow create: if canCreateModule(workspaceId, 'invoices');
+        allow update: if canUpdateModule(workspaceId, 'invoices');
+        allow delete: if canDeleteModule(workspaceId, 'invoices');
+      }
+      
+      match /payments/{paymentId} {
+        allow read: if canViewModule(workspaceId, 'payments');
+        allow create: if canCreateModule(workspaceId, 'payments');
+        allow update: if canUpdateModule(workspaceId, 'payments');
+        allow delete: if canDeleteModule(workspaceId, 'payments');
+      }
+      
+      match /proposals/{proposalId} {
+        allow read: if canViewModule(workspaceId, 'proposals');
+        allow create: if canCreateModule(workspaceId, 'proposals');
+        allow update: if canUpdateModule(workspaceId, 'proposals');
+        allow delete: if canDeleteModule(workspaceId, 'proposals');
+      }
+      
+      match /communications/{communicationId} {
+        allow read: if canViewModule(workspaceId, 'communications');
+        allow create: if canCreateModule(workspaceId, 'communications');
+        allow update: if canUpdateModule(workspaceId, 'communications');
+        allow delete: if canDeleteModule(workspaceId, 'communications');
+      }
+      
+      match /calendarEvents/{eventId} {
+        allow read: if canViewModule(workspaceId, 'calendarEvents');
+        allow create: if canCreateModule(workspaceId, 'calendarEvents');
+        allow update: if canUpdateModule(workspaceId, 'calendarEvents');
+        allow delete: if canDeleteModule(workspaceId, 'calendarEvents');
+      }
+      
+      match /supportTickets/{ticketId} {
+        allow read: if canViewModule(workspaceId, 'supportTickets');
+        allow create: if canCreateModule(workspaceId, 'supportTickets');
+        allow update: if canUpdateModule(workspaceId, 'supportTickets');
+        allow delete: if canDeleteModule(workspaceId, 'supportTickets');
+      }
+      
+      match /templates/{templateId} {
+        allow read: if canViewModule(workspaceId, 'templates');
+        allow create: if canCreateModule(workspaceId, 'templates');
+        allow update: if canUpdateModule(workspaceId, 'templates');
+        allow delete: if canDeleteModule(workspaceId, 'templates');
+      }
+      
+      match /promptHistory/{promptId} {
+        allow read: if canViewModule(workspaceId, 'promptHistory');
+        allow create: if canCreateModule(workspaceId, 'promptHistory');
+        allow update: if canUpdateModule(workspaceId, 'promptHistory');
+        allow delete: if canDeleteModule(workspaceId, 'promptHistory');
+      }
+      
+      match /projectLogs/{logId} {
+        allow read: if canViewModule(workspaceId, 'projectLogs');
+        allow create: if canCreateModule(workspaceId, 'projectLogs');
+        allow update: if canUpdateModule(workspaceId, 'projectLogs');
+        allow delete: if canDeleteModule(workspaceId, 'projectLogs');
+      }
+      
+      match /roadmapItems/{roadmapItemId} {
+        allow read: if canViewModule(workspaceId, 'roadmapItems');
+        allow create: if canCreateModule(workspaceId, 'roadmapItems');
+        allow update: if canUpdateModule(workspaceId, 'roadmapItems');
+        allow delete: if canDeleteModule(workspaceId, 'roadmapItems');
+      }
+      
+      match /tags/{tagId} {
+        allow read: if canViewModule(workspaceId, 'tags');
+        allow create: if canCreateModule(workspaceId, 'tags');
+        allow update: if canUpdateModule(workspaceId, 'tags');
+        allow delete: if canDeleteModule(workspaceId, 'tags');
+      }
+      
+      match /customFields/{fieldId} {
+        allow read: if canViewModule(workspaceId, 'customFields');
+        allow create: if canCreateModule(workspaceId, 'customFields');
+        allow update: if canUpdateModule(workspaceId, 'customFields');
+        allow delete: if canDeleteModule(workspaceId, 'customFields');
+      }
+      
+      match /auditLogs/{auditId} {
+        allow read: if isMember(workspaceId) && (isOwner(workspaceId) || isAdmin(workspaceId));
+        allow create: if isMember(workspaceId);
+        allow update: if false;
+        allow delete: if canDeleteAuditLogs(workspaceId);
+      }
+      
+      match /data/{document=**} {
+        allow read: if isMember(workspaceId);
+        allow write: if isMember(workspaceId);
+      }
+    }
+  }
+}

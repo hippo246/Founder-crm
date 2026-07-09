@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
-import { Badge, Modal, Confirm, FormField, SearchInput, EmptyState, SectionCard, StatMini, ProgressBar, btnStyle, inputStyle, toast } from "../components/ui/UI.jsx";
-import { genId, fmtDate, isOverdue, isToday } from "../lib/helpers.js";
-import { saveLS, saveWorkspaceData } from "../lib/storage.js";
+import { Badge, Modal, Confirm, FormField, SearchInput, EmptyState, StatMini, btnStyle, inputStyle, toast } from "../components/ui/UI.jsx";
+import { genId, fmtDate, isOverdue } from "../lib/helpers.js";
+import { saveWorkspaceData } from "../lib/storage.js";
 import { exportToCSV } from "../lib/exports.js";
 import { FU_TYPES, FU_STATUSES } from "../config/crmConfig.js";
 
@@ -12,20 +12,53 @@ import { FU_TYPES, FU_STATUSES } from "../config/crmConfig.js";
 
 const FollowUpForm = ({ initial = {}, onSave, onClose, contacts, leads, projects }) => {
   const [f, setF] = useState({ person: "", relatedTo: "", relatedType: "Lead", type: "WhatsApp", dueDate: new Date().toISOString().slice(0,10), status: "Pending", notes: "", outcome: "", createdAt: new Date().toISOString().slice(0,10), ...initial });
+  const [errors, setErrors] = useState({});
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
+
+  // Build suggestions from actual data
+  const personSuggestions = [
+    ...(contacts||[]).map(c => c.name).filter(Boolean),
+    ...(leads||[]).map(l => l.name || l.company).filter(Boolean),
+  ].filter((v,i,a) => a.indexOf(v) === i);
+
+  const relatedSuggestions = {
+    Lead:    (leads||[]).map(l => l.name || l.company).filter(Boolean),
+    Project: (projects||[]).map(p => p.name).filter(Boolean),
+    Contact: (contacts||[]).map(c => c.name).filter(Boolean),
+  };
+
+  const handleSave = () => {
+    const e = {};
+    if (!f.person.trim()) e.person = "Person is required";
+    if (!f.dueDate) e.dueDate = "Due date is required";
+    setErrors(e);
+    if (Object.keys(e).length > 0) { toast("Please fix the errors below", "error"); return; }
+    onSave(f);
+  };
+
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <FormField label="Person"><input style={inputStyle} value={f.person} onChange={set("person")} placeholder="Contact name" /></FormField>
+        <FormField label="Person" required>
+          <input list="fu-person-list" style={{ ...inputStyle, borderColor: errors.person ? "#ef4444" : undefined }} value={f.person} onChange={set("person")} placeholder="Contact name" autoFocus />
+          <datalist id="fu-person-list">{personSuggestions.map(s => <option key={s} value={s} />)}</datalist>
+          {errors.person && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 2 }}>{errors.person}</div>}
+        </FormField>
         <FormField label="Type"><select style={inputStyle} value={f.type} onChange={set("type")}>{FU_TYPES.map(t => <option key={t}>{t}</option>)}</select></FormField>
-        <FormField label="Related to"><input style={inputStyle} value={f.relatedTo} onChange={set("relatedTo")} placeholder="Lead or project name" /></FormField>
         <FormField label="Related type"><select style={inputStyle} value={f.relatedType} onChange={set("relatedType")}><option>Lead</option><option>Project</option><option>Contact</option></select></FormField>
-        <FormField label="Due date"><input style={inputStyle} type="date" value={f.dueDate} onChange={set("dueDate")} /></FormField>
+        <FormField label="Related to">
+          <input list="fu-related-list" style={inputStyle} value={f.relatedTo} onChange={set("relatedTo")} placeholder={`${f.relatedType} name`} />
+          <datalist id="fu-related-list">{(relatedSuggestions[f.relatedType]||[]).map(s => <option key={s} value={s} />)}</datalist>
+        </FormField>
+        <FormField label="Due date" required>
+          <input style={{ ...inputStyle, borderColor: errors.dueDate ? "#ef4444" : undefined }} type="date" value={f.dueDate} onChange={set("dueDate")} />
+          {errors.dueDate && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 2 }}>{errors.dueDate}</div>}
+        </FormField>
         <FormField label="Status"><select style={inputStyle} value={f.status} onChange={set("status")}>{FU_STATUSES.map(s => <option key={s}>{s}</option>)}</select></FormField>
       </div>
-      <FormField label="Notes"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={f.notes} onChange={set("notes")} /></FormField>
-      <FormField label="Outcome"><input style={inputStyle} value={f.outcome} onChange={set("outcome")} placeholder="What happened?" /></FormField>
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}><button style={btnStyle("ghost")} onClick={onClose}>Cancel</button><button style={btnStyle("primary")} onClick={() => onSave(f)}>Save</button></div>
+      <FormField label="Notes"><textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={f.notes} onChange={set("notes")} placeholder="Context, preparation notes…" /></FormField>
+      <FormField label="Outcome" hint="Fill in after the follow-up is done"><input style={inputStyle} value={f.outcome} onChange={set("outcome")} placeholder="What happened? Any next steps?" /></FormField>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}><button style={btnStyle("ghost")} onClick={onClose}>Cancel</button><button style={btnStyle("primary")} onClick={handleSave}>Save</button></div>
     </div>
   );
 };
@@ -40,15 +73,21 @@ export default function FollowUpsTab({ followUps, setFollowUps, addAudit, role, 
   const [confirm, setConfirm] = useState(null);
   const [viewFilter, setViewFilter] = useState("All");
 
-  const filtered = useMemo(() => {
+  const { filtered, todayCount, missedCount } = useMemo(() => {
     const today = new Date().toISOString().slice(0,10);
-    return (followUps || []).filter(f => {
+    const all = followUps || [];
+    const filtered = all.filter(f => {
       const q = search.toLowerCase();
-      return (!q || f.person?.toLowerCase().includes(q) || f.relatedTo?.toLowerCase().includes(q))
+      return (!q || f.person?.toLowerCase().includes(q) || f.relatedTo?.toLowerCase().includes(q) || f.notes?.toLowerCase().includes(q) || f.type?.toLowerCase().includes(q) || f.outcome?.toLowerCase().includes(q))
         && (filterStatus === "All" || f.status === filterStatus)
         && (filterType === "All" || f.type === filterType)
-        && (viewFilter === "Today" ? f.dueDate === today : viewFilter === "Missed" ? f.status === "Missed" : true);
+        && (viewFilter === "Today" ? f.dueDate === today : viewFilter === "Missed" ? f.status === "Missed" : viewFilter === "Overdue" ? (f.dueDate && f.dueDate < today && f.status === "Pending") : true);
     });
+    return {
+      filtered,
+      todayCount: all.filter(f => f.dueDate === today).length,
+      missedCount: all.filter(f => f.status === "Missed").length,
+    };
   }, [followUps, search, filterStatus, filterType, viewFilter]);
 
   const save = (f) => {
@@ -61,6 +100,13 @@ export default function FollowUpsTab({ followUps, setFollowUps, addAudit, role, 
 
   const createTask = fu => {
     if (role === "Viewer") return;
+    if (onLinkedSave) {
+      onLinkedSave("task", { title: `Follow up: ${fu.person}`, description: fu.notes||"", project: fu.relatedTo||"", status: "Todo", priority: "Medium", dueDate: fu.dueDate||"", tags: ["follow-up"], checklist: [] });
+      addAudit("Tasks", "Create", `Task from follow-up: ${fu.person}`);
+      toast("Task created");
+      return;
+    }
+    if (!setTasks) { toast("Task creation not available", "error"); return; }
     const nt = { id: genId(), title: `Follow up: ${fu.person}`, description: fu.notes||"", project: fu.relatedTo||"", status: "Todo", priority: "Medium", dueDate: fu.dueDate||"", checklist: [], tags: ["follow-up"], createdAt: new Date().toISOString().slice(0,10) };
     const u = [nt, ...(tasks||[])]; setTasks(u); saveWorkspaceData("tasks", u, workspaceId);
     addAudit("Tasks", "Create", `Task from follow-up: ${fu.person}`); toast("Task created");
@@ -73,17 +119,21 @@ export default function FollowUpsTab({ followUps, setFollowUps, addAudit, role, 
     addAudit("Calendar", "Create", `Event from follow-up: ${fu.person}`); toast("Calendar event created");
   };
   
-  const handleExport = () => { exportToCSV("followUps", filtered); toast("Follow-Ups exported to CSV"); };
-
-  const todayCount = (followUps||[]).filter(f => f.dueDate === new Date().toISOString().slice(0,10) && f.status === "Pending").length;
-  const missedCount = (followUps||[]).filter(f => f.status === "Missed").length;
+  const handleExport = () => { exportToCSV(filtered, "followUps"); toast("Follow-Ups exported to CSV"); };
 
   return (
     <div>
       {confirm && <Confirm msg="Delete this follow-up?" onYes={() => del(confirm)} onNo={() => setConfirm(null)} />}
       {(showForm||editing) && <Modal title={editing?"Edit follow-up":"Add follow-up"} onClose={() => { setShowForm(false); setEditing(null); }} width={580}><FollowUpForm initial={editing||{}} onSave={save} onClose={() => { setShowForm(false); setEditing(null); }} contacts={contacts} leads={leads} projects={projects} /></Modal>}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
-        <div><h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--text)" }}>Follow-Ups</h2><p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>{(followUps||[]).length} total</p></div>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--text)" }}>Follow-Ups</h2>
+          <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
+            {filtered.length !== (followUps||[]).length
+              ? <>{filtered.length} of {(followUps||[]).length} shown</>
+              : <>{(followUps||[]).length} total</>}
+          </p>
+        </div>
         <div style={{ display:"flex", gap:"8px" }}>
           <button style={btnStyle("ghost", "sm")} onClick={handleExport}>Export CSV</button>
           {role !== "Viewer" && <button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Add follow-up</button>}
@@ -96,39 +146,59 @@ export default function FollowUpsTab({ followUps, setFollowUps, addAudit, role, 
         <StatMini label="Done" value={(followUps||[]).filter(f=>f.status==="Done").length} color="var(--success)" />
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        {["All","Today","Missed"].map(v => <button key={v} style={btnStyle(viewFilter===v?"primary":"ghost","sm")} onClick={() => setViewFilter(v)}>{v}</button>)}
+        {[
+          { v: "All", label: "All", count: (followUps||[]).length },
+          { v: "Today", label: "Today", count: todayCount },
+          { v: "Overdue", label: "Overdue", count: (followUps||[]).filter(f => f.dueDate && isOverdue(f.dueDate) && f.status === "Pending").length },
+          { v: "Missed", label: "Missed", count: missedCount },
+        ].map(({ v, label, count }) => (
+          <button key={v} style={btnStyle(viewFilter===v?"primary":"ghost","sm")} onClick={() => setViewFilter(v)}>
+            {label}{count > 0 && v !== "All" && <span style={{ marginLeft: 5, fontSize: 10, padding: "1px 5px", borderRadius: 8, background: viewFilter===v?"rgba(255,255,255,0.25)":"var(--accent-dim)", color: viewFilter===v?"#fff":"var(--accent)", fontWeight: 700 }}>{count}</span>}
+          </button>
+        ))}
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
         <SearchInput value={search} onChange={setSearch} placeholder="Search by person or related…" />
-        <select style={{ ...inputStyle, width: "auto" }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="All">All statuses</option>{FU_STATUSES.map(s => <option key={s}>{s}</option>)}</select>
-        <select style={{ ...inputStyle, width: "auto" }} value={filterType} onChange={e => setFilterType(e.target.value)}><option value="All">All types</option>{FU_TYPES.map(t => <option key={t}>{t}</option>)}</select>
+        <select style={{ ...inputStyle, width: "auto" }} value={filterStatus} onChange={e => { setFilterStatus(e.target.value); if (e.target.value !== "All") setViewFilter("All"); }}><option value="All">All statuses</option>{FU_STATUSES.map(s => <option key={s}>{s}</option>)}</select>
+        <select style={{ ...inputStyle, width: "auto" }} value={filterType} onChange={e => { setFilterType(e.target.value); if (e.target.value !== "All") setViewFilter("All"); }}><option value="All">All types</option>{FU_TYPES.map(t => <option key={t}>{t}</option>)}</select>
       </div>
-      {filtered.length === 0 ? <EmptyState icon="📞" title="No follow-ups" sub="Stay on top of your outreach." action={<button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Add follow-up</button>} /> : (
+      {filtered.length === 0 ? <EmptyState icon="📞" title={(followUps||[]).length > 0 ? "No results" : "No follow-ups"} sub={(followUps||[]).length > 0 ? "Try adjusting your filters or search." : "Stay on top of your outreach."} action={(followUps||[]).length === 0 && <button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Add follow-up</button>} /> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filtered.map(fu => {
             const overdue = fu.dueDate && isOverdue(fu.dueDate) && fu.status === "Pending";
             return (
-              <div key={fu.id} style={{ background: "var(--surface)", border: `1px solid ${overdue?"#FCA5A5":"var(--border)"}`, borderRadius: 12, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+              <div key={fu.id} style={{ background: "var(--surface)", border: `1px solid ${overdue?"#FCA5A5":fu.status==="Done"?"var(--border)":"var(--border)"}`, borderLeft: `3px solid ${overdue?"#EF4444":fu.status==="Done"?"#10B981":fu.status==="Missed"?"#F59E0B":"var(--accent)"}`, borderRadius: 12, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)", marginBottom: 4 }}>{fu.person || "—"}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>{fu.type} · {fu.relatedTo || "—"} · Due: <span style={{ color: overdue?"#DC2626":"var(--text-muted)", fontWeight: overdue?600:400 }}>{fmtDate(fu.dueDate)}{overdue&&" ⏰"}</span></div>
-                  {fu.notes && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{fu.notes}</div>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{fu.person || "—"}</span>
+                    <Badge label={fu.status} />
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: fu.notes||fu.outcome ? 6 : 0 }}>
+                    {fu.type} · {fu.relatedTo || "—"} · Due: <span style={{ color: overdue?"#DC2626":"var(--text-muted)", fontWeight: overdue?600:400 }}>{fmtDate(fu.dueDate)}{overdue&&" ⏰"}</span>
+                  </div>
+                  {fu.notes && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: fu.outcome ? 3 : 0 }}>{fu.notes}</div>}
+                  {fu.outcome && <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>💬 {fu.outcome}</div>}
                 </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                  <Badge label={fu.status} />
-                  {role !== "Viewer" && <>
-                    {fu.status !== "Done" && <button style={{ ...btnStyle("ghost","sm"), color:"var(--success)" }} onClick={() => markStatus(fu.id, "Done")}>✓ Done</button>}
-                    {fu.status === "Pending" && <button style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => markStatus(fu.id, "Missed")}>Missed</button>}
-                    <button style={btnStyle("ghost","sm")} onClick={() => createTask(fu)}>+ Task</button>
-                    <button style={btnStyle("ghost","sm")} onClick={() => createCalEvent(fu)}>+ Event</button>
-                    <button style={btnStyle("ghost","sm")} onClick={() => setEditing(fu)}>Edit</button>
-                    {(role==="Owner"||role==="Admin") && <button style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => setConfirm(fu.id)}>Del</button>}
-                    {onLinkedSave && role !== "Viewer" && <>
-                      <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("task",{title:`Follow up: ${fu.person}`,project:fu.relatedTo||"",status:"Todo",priority:"Medium",dueDate:fu.dueDate||""})}>✅ Task</button>
-                      <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("note",{title:`Note — ${fu.person}`,relatedTo:fu.relatedTo||fu.person,relatedType:"Follow-Up",body:fu.notes||"",tags:[]})}>📝 Note</button>
-                    </>}
-                  </>}
-                </div>
+                {role !== "Viewer" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-end" }}>
+                    {/* Primary actions */}
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {fu.status !== "Done" && <button style={{ ...btnStyle("ghost","sm"), color:"var(--success)" }} onClick={() => markStatus(fu.id, "Done")}>✓ Done</button>}
+                      {fu.status === "Pending" && <button style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => markStatus(fu.id, "Missed")}>Missed</button>}
+                      {(fu.status === "Missed" || fu.status === "Rescheduled") && <button style={{ ...btnStyle("ghost","sm"), color:"var(--accent)" }} onClick={() => markStatus(fu.id, "Pending")}>↩ Reopen</button>}
+                      <button style={btnStyle("ghost","sm")} onClick={() => setEditing(fu)}>Edit</button>
+                      {(role==="Owner"||role==="Admin") && <button style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => setConfirm(fu.id)}>Del</button>}
+                    </div>
+                    {/* Secondary actions */}
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button style={{ ...btnStyle("ghost","sm"), fontSize: 10 }} onClick={() => createTask(fu)}>+ Task</button>
+                      <button style={{ ...btnStyle("ghost","sm"), fontSize: 10 }} onClick={() => createCalEvent(fu)}>+ Event</button>
+                      {onLinkedSave && (
+                        <button style={{ ...btnStyle("ghost","sm"), fontSize: 10 }} onClick={() => onLinkedSave("note",{title:`Note — ${fu.person}`,relatedTo:fu.relatedTo||fu.person,relatedType:"Follow-Up",body:fu.notes||"",tags:[]})}>📝 Note</button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

@@ -88,7 +88,7 @@ a { color: var(--accent); text-decoration: none; }
 
 .sidebar-logo-name {
   font-weight: 700;
-  color: #E8EEFF;
+  color: var(--text);
   font-size: 13px;
   white-space: nowrap;
   letter-spacing: -0.2px;
@@ -330,9 +330,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 .btn-soft:hover { background: var(--surface-overlay); color: var(--text); }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   FORM INPUTS
-══════════════════════════════════════════════════════════════════════════ */
+/* ── Form Inputs ──────────────────────────────────────────────────────── */
 .input {
   width: 100%; padding: 8px 12px; border-radius: var(--r-md);
   border: 1px solid var(--border-strong); font-size: 13px;
@@ -343,6 +341,21 @@ a { color: var(--accent); text-decoration: none; }
 .input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+
+/* Prevent iOS auto-zoom on input focus */
+@media (max-width: 480px) {
+  input[type="email"], 
+  input[type="password"], 
+  input[type="text"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select,
+  .input {
+    font-size: 16px !important;
+  }
 }
 
 .field-label {

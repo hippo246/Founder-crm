@@ -89,7 +89,7 @@
   --surface-raised:  #F7F9FC;
   --surface-overlay: #EEF2F8;
   --surface-hover:   rgba(0,0,0,0.025);
-  --sidebar-bg:      #0D1117;
+  --sidebar-bg:      #FFFFFF;
 
   --text:            #0D1421;
   --text-muted:      #64748B;
@@ -110,4 +110,5 @@
   --stripe:          rgba(0,0,0,0.016);
 
   --nav-active-bg:     rgba(59,130,246,0.1);
+  --nav-hover-bg:      rgba(0,0,0,0.04);
 }

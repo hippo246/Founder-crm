@@ -8,6 +8,7 @@ import AppearanceSection from "./AppearanceSection.jsx";
 import TagsSection from "./TagsSection.jsx";
 import CustomFieldsSection from "./CustomFieldsSection.jsx";
 import DataSection from "./DataSection.jsx";
+import SecurityTab from "../SecurityTab.jsx";
 
 const SUB_TABS = [
   { id: "workspaces",    label: "Workspaces" },
@@ -21,6 +22,7 @@ const SUB_TABS = [
   { id: "tags",          label: "Tags" },
   { id: "customFields",  label: "Custom Fields" },
   { id: "data",          label: "Data" },
+  { id: "security",      label: "Security" },
 ];
 
 const subTabBarStyle = {
@@ -218,6 +220,15 @@ export default function SettingsTab({ settings, setSettings, role, onResetData, 
             <button style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--r-md)", cursor: "pointer" }} onClick={saveAll}>Save Settings</button>
           </div>
         </div>
+      )}
+
+      {/* ── SECURITY ── */}
+      {activeTab === "security" && (
+        <SecurityTab 
+          settings={f} 
+          setSettings={setF} 
+          workspaceId={workspaceId} 
+        />
       )}
     </div>
   );

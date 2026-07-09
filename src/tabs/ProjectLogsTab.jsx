@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Badge, Modal, Confirm, FormField, SearchInput, EmptyState, btnStyle, inputStyle, toast } from "../components/ui/UI.jsx";
 import { genId, fmtDate } from "../lib/helpers.js";
-import { saveLS, saveWorkspaceData } from "../lib/storage.js";
+import { saveWorkspaceData } from "../lib/storage.js";
 import { exportToCSV } from "../lib/exports.js";
 import { LOG_TYPES, LOG_STATUSES, LOG_STATUS_COLORS, LOG_STATUS_BG } from "../config/crmConfig.js";
 
@@ -23,7 +23,7 @@ function LogForm({ initial={}, onSave, onClose, projects=[], tasks=[], prompts=[
         <FormField label="Type"><select style={inputStyle} value={f.type} onChange={set("type")}>{LOG_TYPES.map(t=><option key={t}>{t}</option>)}</select></FormField>
         <FormField label="Status"><select style={inputStyle} value={f.status} onChange={set("status")}>{LOG_STATUSES.map(s=><option key={s}>{s}</option>)}</select></FormField>
         <FormField label="Date"><input style={inputStyle} type="date" value={f.date} onChange={set("date")} /></FormField>
-        <FormField label="Impact"><input style={inputStyle} value={f.impact} onChange={set("impact")} placeholder="Low / Medium / High" /></FormField>
+        <FormField label="Impact"><select style={inputStyle} value={f.impact} onChange={set("impact")}><option value="">— None —</option><option>Low</option><option>Medium</option><option>High</option></select></FormField>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
         <FormField label="Linked prompt"><select style={inputStyle} value={f.relatedPromptId} onChange={set("relatedPromptId")}><option value="">— None —</option>{prompts.map(p=><option key={p.id} value={p.id}>#{p.promptNumber} {p.title}</option>)}</select></FormField>
@@ -42,8 +42,12 @@ function LogForm({ initial={}, onSave, onClose, projects=[], tasks=[], prompts=[
   );
 }
 
-export default function ProjectLogsTab({ projectLogs, setProjectLogs, addAudit, role, projects, tasks, setTasks, promptHistory, roadmapItems, supportTickets , workspaceId = "workspace-1" , onLinkedSave}) {
-  const logs = projectLogs||[];
+export default function ProjectLogsTab({ projectLogs, setProjectLogs, addAudit = () => {}, role = "Owner", projects, tasks, setTasks, promptHistory, roadmapItems, supportTickets, workspaceId = "workspace-1", onLinkedSave }) {
+  const logs = projectLogs || [];
+  const allTasks = tasks || [];
+  const allPrompts = promptHistory || [];
+  const allRoadmap = roadmapItems || [];
+  const allTickets = supportTickets || [];
   const [search, setSearch] = useState("");
   const [filterProject, setFilterProject] = useState("All");
   const [filterType, setFilterType] = useState("All");
@@ -61,34 +65,62 @@ export default function ProjectLogsTab({ projectLogs, setProjectLogs, addAudit, 
       &&(filterStatus==="All"||l.status===filterStatus);
   }),[sorted,search,filterProject,filterType,filterStatus]);
 
-  const allProjects = useMemo(()=>["All",...new Set(logs.map(l=>l.project).filter(Boolean))],[logs]);
+  const allProjects = useMemo(() => ["All", ...(projects || []).map(p => p.name)], [projects]);
 
-  const save = f => {
-    if(editing){ const u=logs.map(l=>l.id===editing.id?{...editing,...f}:l); setProjectLogs(u); saveWorkspaceData("projectLogs", u, workspaceId); addAudit("Project Logs","Update",`Updated: ${f.title}`); toast("Updated"); }
-    else { const nl={...f,id:genId()}; const u=[nl,...logs]; setProjectLogs(u); saveWorkspaceData("projectLogs", u, workspaceId); addAudit("Project Logs","Create",`Logged: ${f.title}`); toast("Log added"); }
-    setShowForm(false); setEditing(null);
+  const save = async (f) => {
+    if (editing) {
+      const u = logs.map(l => l.id === editing.id ? { ...editing, ...f } : l);
+      setProjectLogs(u);
+      await saveWorkspaceData("projectLogs", u, workspaceId);
+      addAudit("Project Logs", "Update", `Updated: ${f.title}`);
+      toast("Updated");
+    } else {
+      const nl = { ...f, id: genId() };
+      const u = [nl, ...logs];
+      setProjectLogs(u);
+      await saveWorkspaceData("projectLogs", u, workspaceId);
+      addAudit("Project Logs", "Create", `Logged: ${f.title}`);
+      toast("Log added");
+    }
+    setShowForm(false);
+    setEditing(null);
   };
-  const del = id => { const l=logs.find(x=>x.id===id); const u=logs.filter(x=>x.id!==id); setProjectLogs(u); saveWorkspaceData("projectLogs", u, workspaceId); addAudit("Project Logs","Delete",`Deleted: ${l?.title}`); toast("Deleted","info"); setConfirm(null); };
 
-  const createTask = l => {
-    if(role==="Viewer"){toast("No permission","error");return;}
-    const nt={id:genId(),title:`[Log] ${l.title}`,description:l.description||"",project:l.project,status:"Todo",priority:"Medium",dueDate:"",checklist:[],tags:["project-log"],createdAt:new Date().toISOString().slice(0,10)};
-    const u=[nt,...(tasks||[])]; setTasks(u); saveWorkspaceData("tasks", u, workspaceId); addAudit("Tasks","Create",`Task from log: ${l.title}`); toast("Task created");
+  const del = async (id) => {
+    const l = logs.find(x => x.id === id);
+    const u = logs.filter(x => x.id !== id);
+    setProjectLogs(u);
+    await saveWorkspaceData("projectLogs", u, workspaceId);
+    addAudit("Project Logs", "Delete", `Deleted: ${l?.title}`);
+    toast("Deleted", "info");
+    setConfirm(null);
   };
 
-  const getLinkedLabel = (type, id, list) => list?.find(x=>x.id===id);
-  
+  const createTask = async (l) => {
+    const nt = {
+      id: genId(), title: `[Log] ${l.title}`, description: l.description || "",
+      project: l.project, status: "Todo", priority: "Medium",
+      dueDate: "", checklist: [], tags: ["project-log"],
+      createdAt: new Date().toISOString().slice(0, 10)
+    };
+    const u = [nt, ...allTasks];
+    setTasks(u);
+    await saveWorkspaceData("tasks", u, workspaceId);
+    addAudit("Tasks", "Create", `Task from log: ${l.title}`);
+    toast("Task created");
+  };
+
   const handleExport = () => { exportToCSV("project-logs", filtered); toast("Project logs exported to CSV"); };
 
   return (
     <div>
       {confirm&&<Confirm msg="Delete this log?" onYes={()=>del(confirm)} onNo={()=>setConfirm(null)} />}
-      {(showForm||editing)&&<Modal title={editing?"Edit log":"Add log entry"} onClose={()=>{setShowForm(false);setEditing(null);}} width={680}><LogForm initial={editing||{}} onSave={save} onClose={()=>{setShowForm(false);setEditing(null);}} projects={projects||[]} tasks={tasks||[]} prompts={promptHistory||[]} roadmapItems={roadmapItems||[]} supportTickets={supportTickets||[]} /></Modal>}
+      {(showForm||editing)&&<Modal title={editing?"Edit log":"Add log entry"} onClose={()=>{setShowForm(false);setEditing(null);}} width={680}><LogForm initial={editing||{}} onSave={save} onClose={()=>{setShowForm(false);setEditing(null);}} projects={projects||[]} tasks={allTasks} prompts={allPrompts} roadmapItems={allRoadmap} supportTickets={allTickets} /></Modal>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}}>
         <div>
           <h2 style={{margin:0,fontSize:20,fontWeight:700,color:"var(--text)"}}>Project Logs</h2>
-          <p style={{margin:"3px 0 0",fontSize:12,color:"var(--text-muted)"}}>{logs.length} entries · change history across all projects</p>
+          <p style={{margin:"3px 0 0",fontSize:12,color:"var(--text-muted)"}}>{filtered.length !== logs.length ? `${filtered.length} of ${logs.length}` : logs.length} entries · change history across all projects</p>
         </div>
         <div style={{ display:"flex", gap:"8px" }}>
           <button style={btnStyle("ghost", "sm")} onClick={handleExport}>Export CSV</button>
@@ -103,13 +135,13 @@ export default function ProjectLogsTab({ projectLogs, setProjectLogs, addAudit, 
         <select style={{...inputStyle,width:"auto"}} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}><option value="All">All statuses</option>{LOG_STATUSES.map(s=><option key={s}>{s}</option>)}</select>
       </div>
 
-      {filtered.length===0?<EmptyState icon="📋" title="No log entries" sub="Track every build, fix, and decision." action={<button style={btnStyle("primary")} onClick={()=>setShowForm(true)}>+ Add log</button>}/>:(
+      {filtered.length===0?<EmptyState icon="📋" title="No log entries" sub="Track every build, fix, and decision." action={role !== "Viewer" && <button style={btnStyle("primary")} onClick={()=>setShowForm(true)}>+ Add log</button>}/>:(
         <div>
           {filtered.map((l,idx)=>{
-            const linkedPrompt  = l.relatedPromptId   && (promptHistory||[]).find(p=>p.id===l.relatedPromptId);
-            const linkedTask    = l.relatedTaskId      && (tasks||[]).find(t=>t.id===l.relatedTaskId);
-            const linkedRoadmap = l.relatedRoadmapItemId && (roadmapItems||[]).find(r=>r.id===l.relatedRoadmapItemId);
-            const linkedTicket  = l.relatedSupportTicketId && (supportTickets||[]).find(t=>t.id===l.relatedSupportTicketId);
+            const linkedPrompt  = l.relatedPromptId   && allPrompts.find(p=>p.id===l.relatedPromptId);
+            const linkedTask    = l.relatedTaskId      && allTasks.find(t=>t.id===l.relatedTaskId);
+            const linkedRoadmap = l.relatedRoadmapItemId && allRoadmap.find(r=>r.id===l.relatedRoadmapItemId);
+            const linkedTicket  = l.relatedSupportTicketId && allTickets.find(t=>t.id===l.relatedSupportTicketId);
             const dotColor = LOG_STATUS_COLORS[l.status]||"#94A3B8";
             const dotBg    = LOG_STATUS_BG[l.status]||"rgba(100,116,139,0.1)";
             return (
@@ -140,15 +172,15 @@ export default function ProjectLogsTab({ projectLogs, setProjectLogs, addAudit, 
                       {linkedTicket&&<span>🎫 {linkedTicket.title}</span>}
                     </div>
                   )}
-                  {role!=="Viewer"&&(
+                  {role !== "Viewer" && (
                     <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:4}}>
-                      <button style={btnStyle("ghost","sm")} onClick={()=>createTask(l)}>+ Task</button>
-                      <button style={btnStyle("ghost","sm")} onClick={()=>setEditing(l)}>Edit</button>
-                      {(role==="Owner"||role==="Admin")&&<button style={{...btnStyle("ghost","sm"),color:"var(--danger)"}} onClick={()=>setConfirm(l.id)}>Del</button>}
-                      {onLinkedSave && role !== "Viewer" && <>
-                        <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("task",{title:`[Log] ${l.title}`,project:l.project||"",status:"Todo",priority:"Medium",projectLogId:l.id})}>✅ Task</button>
-                        <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("note",{title:`Note — ${l.title}`,relatedTo:l.project||l.title,relatedType:"ProjectLog",body:l.description||"",tags:[]})}>📝 Note</button>
-                      </>}
+                      <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave
+                        ? onLinkedSave("task", {title:`[Log] ${l.title}`, project:l.project||"", status:"Todo", priority:"Medium", projectLogId:l.id})
+                        : createTask(l)
+                      }>+ Task</button>
+                      {onLinkedSave && <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("note", {title:`Note — ${l.title}`, relatedTo:l.project||l.title, relatedType:"ProjectLog", body:l.description||"", tags:[]})}>📝 Note</button>}
+                      <button style={btnStyle("ghost","sm")} onClick={() => setEditing(l)}>Edit</button>
+                      {(role === "Owner" || role === "Admin") && <button style={{...btnStyle("ghost","sm"), color:"var(--danger)"}} onClick={() => setConfirm(l.id)}>Delete</button>}
                     </div>
                   )}
                 </div>

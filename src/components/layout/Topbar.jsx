@@ -2,6 +2,10 @@ import { inputStyle, btnStyle } from "../ui/UI.jsx";
 
 export default function Topbar({ onSearchOpen, onMobileMenu, isDark, toggleTheme, role, settings, saveSettings, workspaces, currentWorkspaceId, switchWorkspace, user, onLogout }) {
   const currentWorkspace = workspaces?.find(w => w.id === currentWorkspaceId) || workspaces?.[0];
+  const ownerName = user?.ownerName || settings?.businessName || "";
+  const initials = ownerName
+    ? ownerName.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()
+    : "?";
 
   return (
     <header className="topbar">
@@ -16,15 +20,15 @@ export default function Topbar({ onSearchOpen, onMobileMenu, isDark, toggleTheme
         ☰
       </button>
 
-      {/* Workspace switcher - always visible */}
-      <div style={{ position: "relative", marginRight: 8 }}>
+      {/* Workspace switcher */}
+      <div style={{ position: "relative", marginRight: 8, flexShrink: 0 }}>
         <select
-          style={{ 
-            ...inputStyle, 
-            width: "auto", 
-            padding: "6px 32px 6px 12px", 
-            fontSize: 12, 
-            maxWidth: 200,
+          style={{
+            ...inputStyle,
+            width: "auto",
+            padding: "6px 28px 6px 10px",
+            fontSize: 12,
+            maxWidth: 180,
             appearance: "none",
             backgroundImage: "none",
             cursor: "pointer",
@@ -39,18 +43,19 @@ export default function Topbar({ onSearchOpen, onMobileMenu, isDark, toggleTheme
           ))}
         </select>
         <div style={{
-          position: "absolute",
-          right: 10,
-          top: "50%",
+          position: "absolute", right: 8, top: "50%",
           transform: "translateY(-50%)",
-          pointerEvents: "none",
-          fontSize: 10,
-          color: "var(--text-muted)"
+          pointerEvents: "none", fontSize: 9, color: "var(--text-muted)"
         }}>▼</div>
       </div>
 
       {/* Search trigger */}
-      <button data-testid="global-search-trigger" className="topbar-search" onClick={onSearchOpen} aria-label="Global search">
+      <button
+        data-testid="global-search-trigger"
+        className="topbar-search"
+        onClick={onSearchOpen}
+        aria-label="Global search (⌘K)"
+      >
         <span style={{ opacity: 0.4, fontSize: 13 }}>🔍</span>
         <span style={{ fontSize: 13 }}>Search everything…</span>
         <span style={{ marginLeft: "auto", fontSize: 10, opacity: 0.35, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: "var(--r-sm)", padding: "2px 5px" }}>⌘K</span>
@@ -63,34 +68,39 @@ export default function Topbar({ onSearchOpen, onMobileMenu, isDark, toggleTheme
           data-testid="theme-toggle"
           style={{ ...btnStyle("ghost", "sm"), padding: "5px 9px", fontSize: 14 }}
           onClick={toggleTheme}
-          aria-label="Toggle theme"
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
           title={isDark ? "Switch to light mode" : "Switch to dark mode"}
         >
           {isDark ? "☀️" : "🌙"}
         </button>
 
-        {/* Role selector */}
-        <select
-          data-testid="role-selector"
-          style={{ ...inputStyle, width: "auto", padding: "5px 9px", fontSize: 12, maxWidth: 120 }}
-          value={role}
-          onChange={e => saveSettings({ ...settings, role: e.target.value })}
-          aria-label="Role selector"
-        >
-          {["Owner", "Admin", "Staff", "Viewer"].map(r => <option key={r}>{r}</option>)}
-        </select>
-
-        {/* Logout button */}
+        {/* User + logout */}
         {onLogout && (
-          <button
-            data-testid="logout-btn"
-            style={{ ...btnStyle("ghost", "sm"), padding: "5px 9px", fontSize: 12, color: "var(--text-muted)" }}
-            onClick={onLogout}
-            aria-label="Logout"
-            title={`Logout${user?.ownerName ? ` (${user.ownerName})` : ""}`}
-          >
-            🚪
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {ownerName && (
+              <div
+                title={ownerName}
+                style={{
+                  width: 28, height: 28, borderRadius: "50%",
+                  background: "linear-gradient(135deg, var(--accent), #6366F1)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 10, fontWeight: 700, color: "#fff",
+                  flexShrink: 0, userSelect: "none", cursor: "default"
+                }}
+              >
+                {initials}
+              </div>
+            )}
+            <button
+              data-testid="logout-btn"
+              style={{ ...btnStyle("ghost", "sm"), padding: "5px 9px", fontSize: 12, color: "var(--text-muted)" }}
+              onClick={onLogout}
+              aria-label={`Logout${ownerName ? ` (${ownerName})` : ""}`}
+              title={`Logout${ownerName ? ` (${ownerName})` : ""}`}
+            >
+              🚪
+            </button>
+          </div>
         )}
       </div>
     </header>

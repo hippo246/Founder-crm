@@ -26,9 +26,10 @@ export const NAV_TABS = [
   // ── System ────────────────────────────────────────────────────────────
   { id: "analytics",      label: "Analytics",         icon: "📊", group: "System" },
   { id: "support",        label: "Support Tickets",   icon: "🎫", group: "System" },
-  { id: "audit",          label: "Audit Logs",        icon: "🔍", group: "System" },
-  { id: "security",       label: "Security",          icon: "🔒", group: "System" },
-  { id: "settings",       label: "Settings",          icon: "⚙️",  group: "System" },
+  { id: "audit",          label: "Audit Logs",        icon: "🔍", group: "System", ownerOnly: true },
+  { id: "security",       label: "Security",          icon: "🔒", group: "System", ownerOnly: true },
+  { id: "settings",       label: "Settings",          icon: "⚙️", group: "System", ownerOnly: true },
 ];
 
-export const NAV_GROUPS = ["Core", "Work", "Finance", "Founder OS", "System"];
+// Derived — order preserved by first appearance in NAV_TABS
+export const NAV_GROUPS = [...new Map(NAV_TABS.map(t => [t.group, t.group])).keys()];

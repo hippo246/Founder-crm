@@ -20,13 +20,14 @@ export const defaultSettings = {
   theme: "dark",
   role: "Owner",
   followUpDays: 3,
+  sessionTimeout: 30,
 };
 
 export const CONTACT_STATUSES = ["New", "Warm", "Active", "Client", "Lost", "Future"];
 export const CONTACT_SOURCES = ["LinkedIn", "Instagram", "Website", "Friend Referral", "Cold Outreach", "Google", "Other"];
 
 export const LEAD_STAGES = ["New", "Contacted", "Interested", "Demo Sent", "Meeting Done", "Proposal Sent", "Negotiation", "Won", "Lost", "Follow-Up Later"];
-export const KANBAN_STAGES = ["New", "Contacted", "Interested", "Demo Sent", "Meeting Done", "Proposal Sent", "Negotiation", "Won", "Lost"];
+export const KANBAN_STAGES = LEAD_STAGES.filter(s => s !== "Follow-Up Later");
 export const LEAD_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 export const LEAD_SOURCES = ["LinkedIn", "Instagram", "Website", "Friend Referral", "Cold Outreach", "Google", "Other"];
 
@@ -67,8 +68,8 @@ export const PROMPT_TOOLS = ["Claude", "ChatGPT", "Kiro", "Trae", "Cursor", "Oth
 
 export const LOG_TYPES = ["Build", "Bug Fix", "UI Change", "Security", "Compliance", "Deployment", "Client Feedback", "Decision", "Other"];
 export const LOG_STATUSES = ["Info", "Success", "Warning", "Failed"];
-export const LOG_STATUS_COLORS = { Info: "#3B82F6", Success: "#10B981", Warning: "#F59E0B", Failed: "#EF4444" };
-export const LOG_STATUS_BG = { Info: "#EFF6FF", Success: "#ECFDF5", Warning: "#FFFBEB", Failed: "#FEF2F2" };
+export const LOG_STATUS_COLORS = { Info: "var(--info)", Success: "var(--success)", Warning: "var(--warning)", Failed: "var(--danger)" };
+export const LOG_STATUS_BG = { Info: "color-mix(in srgb, var(--info) 12%, transparent)", Success: "color-mix(in srgb, var(--success) 12%, transparent)", Warning: "color-mix(in srgb, var(--warning) 12%, transparent)", Failed: "color-mix(in srgb, var(--danger) 12%, transparent)" };
 
 export const ROADMAP_STATUSES = ["Backlog", "Planned", "In Progress", "Testing", "Review", "Done", "Blocked", "On Hold"];
 export const ROADMAP_PRIORITIES = ["Low", "Medium", "High", "Urgent", "Critical"];
@@ -136,13 +137,8 @@ export const STATUS_COLORS = {
   Failed: { bg: "rgba(239,68,68,0.12)", color: "#FCA5A5" },
   Applied: { bg: "rgba(16,185,129,0.15)", color: "#6EE7B7" },
   "Needs Fix": { bg: "rgba(239,68,68,0.12)", color: "#FCA5A5" },
-};
-
-// New status colors for upgraded statuses
-export const EXTRA_STATUS_COLORS = {
-  Inbox:     { bg: "rgba(56,189,248,0.12)",   color: "#38BDF8" },
-  Waiting:   { bg: "rgba(251,191,36,0.12)",   color: "#FCD34D" },
-  Review:    { bg: "rgba(139,92,246,0.12)",   color: "#A78BFA" },
-  "On Hold": { bg: "rgba(234,179,8,0.12)",    color: "#FACC15" },
-  Critical:  { bg: "rgba(239,68,68,0.25)",    color: "#F87171" },
+  Inbox:     { bg: "rgba(56,189,248,0.12)",  color: "#38BDF8" },
+  Waiting:   { bg: "rgba(251,191,36,0.12)",  color: "#FCD34D" },
+  Review:    { bg: "rgba(139,92,246,0.12)",  color: "#A78BFA" },
+  Critical:  { bg: "rgba(239,68,68,0.25)",   color: "#F87171" },
 };

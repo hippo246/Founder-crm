@@ -4,6 +4,7 @@ import LoginScreen from "./components/auth/LoginScreen.jsx";
 import Sidebar from "./components/layout/Sidebar.jsx";
 import Topbar from "./components/layout/Topbar.jsx";
 import MobileNav from "./components/layout/MobileNav.jsx";
+import BottomNav from "./components/layout/BottomNav.jsx";
 import SearchModal from "./components/shared/SearchModal.jsx";
 import CommandPalette from "./components/shared/CommandPalette.jsx";
 import { loadLS, saveLS, loadWorkspaces, saveWorkspaces, loadCurrentWorkspaceId, saveCurrentWorkspaceId, loadWorkspaceData, saveWorkspaceData, deleteWorkspaceData } from "./lib/storage.js";
@@ -12,14 +13,7 @@ import { setGlobalDateFormat } from "./lib/helpers.js";
 import { initSessionLock, unlockSession } from "./lib/sessionLock.js";
 import { restoreSession, logout, saveActiveTab, getActiveTab, getCurrentUser } from "./lib/auth.js";
 import { defaultSettings } from "./config/crmConfig.js";
-import { initAudit } from "./config/seedData.js";
-import {
-  seedContacts, seedLeads, seedProjects, seedTasks, seedFollowUps,
-  seedNotes, seedDocuments, seedInvoices, seedPayments, seedProposals,
-  seedCommunications, seedCalendarEvents, seedSupportTickets,
-  seedWhatsappTemplates, seedPromptHistory, seedProjectLogs,
-  seedRoadmapItems, seedTags, seedCustomFields,
-} from "./config/seedData.js";
+
 
 // ─── Tab components ───────────────────────────────────────────────────────────
 import DashboardTab        from "./tabs/Dashboard/index.jsx";
@@ -61,28 +55,29 @@ export default function App() {
 
   // ── Core state ──────────────────────────────────────────────────────────────
   const [settings, setSettings]             = useState(() => loadLS("settings", defaultSettings));
-  const [contacts, setContacts]             = useState(() => loadWorkspaceData("contacts", seedContacts, currentWorkspaceId));
-  const [leads, setLeads]                   = useState(() => loadWorkspaceData("leads", seedLeads, currentWorkspaceId));
-  const [projects, setProjects]             = useState(() => loadWorkspaceData("projects", seedProjects, currentWorkspaceId));
-  const [tasks, setTasks]                   = useState(() => loadWorkspaceData("tasks", seedTasks, currentWorkspaceId));
-  const [audit, setAudit]                   = useState(() => loadWorkspaceData("audit", initAudit(), currentWorkspaceId));
+  const [contacts, setContacts]             = useState(() => loadWorkspaceData("contacts", [], currentWorkspaceId));
+  const [leads, setLeads]                   = useState(() => loadWorkspaceData("leads", [], currentWorkspaceId));
+  const [projects, setProjects]             = useState(() => loadWorkspaceData("projects", [], currentWorkspaceId));
+  const [tasks, setTasks]                   = useState(() => loadWorkspaceData("tasks", [], currentWorkspaceId));
+  const [audit, setAudit]                   = useState(() => loadWorkspaceData("audit", [], currentWorkspaceId));
 
   // ── Module state ────────────────────────────────────────────────────────────
-  const [followUps, setFollowUps]           = useState(() => loadWorkspaceData("followUps", seedFollowUps, currentWorkspaceId));
-  const [notes, setNotes]                   = useState(() => loadWorkspaceData("notes", seedNotes, currentWorkspaceId));
-  const [documents, setDocuments]           = useState(() => loadWorkspaceData("documents", seedDocuments, currentWorkspaceId));
-  const [invoices, setInvoices]             = useState(() => loadWorkspaceData("invoices", seedInvoices, currentWorkspaceId));
-  const [payments, setPayments]             = useState(() => loadWorkspaceData("payments", seedPayments, currentWorkspaceId));
-  const [proposals, setProposals]           = useState(() => loadWorkspaceData("proposals", seedProposals, currentWorkspaceId));
-  const [communications, setCommunications] = useState(() => loadWorkspaceData("communications", seedCommunications, currentWorkspaceId));
-  const [calendarEvents, setCalendarEvents] = useState(() => loadWorkspaceData("calendarEvents", seedCalendarEvents, currentWorkspaceId));
-  const [supportTickets, setSupportTickets] = useState(() => loadWorkspaceData("supportTickets", seedSupportTickets, currentWorkspaceId));
-  const [whatsappTemplates, setWhatsappTemplates] = useState(() => loadWorkspaceData("whatsappTemplates", seedWhatsappTemplates, currentWorkspaceId));
-  const [promptHistory, setPromptHistory]   = useState(() => loadWorkspaceData("promptHistory", seedPromptHistory, currentWorkspaceId));
-  const [projectLogs, setProjectLogs]       = useState(() => loadWorkspaceData("projectLogs", seedProjectLogs, currentWorkspaceId));
-  const [roadmapItems, setRoadmapItems]     = useState(() => loadWorkspaceData("roadmapItems", seedRoadmapItems, currentWorkspaceId));
-  const [tags, setTags]                     = useState(() => loadWorkspaceData("tags", seedTags, currentWorkspaceId));
-  const [customFields, setCustomFields]     = useState(() => loadWorkspaceData("customFields", seedCustomFields, currentWorkspaceId));
+  const [followUps, setFollowUps]           = useState(() => loadWorkspaceData("followUps", [], currentWorkspaceId));
+  const [notes, setNotes]                   = useState(() => loadWorkspaceData("notes", [], currentWorkspaceId));
+  const [documents, setDocuments]           = useState(() => loadWorkspaceData("documents", [], currentWorkspaceId));
+  const [invoices, setInvoices]             = useState(() => loadWorkspaceData("invoices", [], currentWorkspaceId));
+  const [payments, setPayments]             = useState(() => loadWorkspaceData("payments", [], currentWorkspaceId));
+  const [proposals, setProposals]           = useState(() => loadWorkspaceData("proposals", [], currentWorkspaceId));
+  const [communications, setCommunications] = useState(() => loadWorkspaceData("communications", [], currentWorkspaceId));
+  const [calendarEvents, setCalendarEvents] = useState(() => loadWorkspaceData("calendarEvents", [], currentWorkspaceId));
+  const [supportTickets, setSupportTickets] = useState(() => loadWorkspaceData("supportTickets", [], currentWorkspaceId));
+  const [whatsappTemplates, setWhatsappTemplates] = useState(() => loadWorkspaceData("whatsappTemplates", [], currentWorkspaceId));
+  const [emailTemplates, setEmailTemplates]       = useState(() => loadWorkspaceData("emailTemplates", [], currentWorkspaceId));
+  const [promptHistory, setPromptHistory]   = useState(() => loadWorkspaceData("promptHistory", [], currentWorkspaceId));
+  const [projectLogs, setProjectLogs]       = useState(() => loadWorkspaceData("projectLogs", [], currentWorkspaceId));
+  const [roadmapItems, setRoadmapItems]     = useState(() => loadWorkspaceData("roadmapItems", [], currentWorkspaceId));
+  const [tags, setTags]                     = useState(() => loadWorkspaceData("tags", [], currentWorkspaceId));
+  const [customFields, setCustomFields]     = useState(() => loadWorkspaceData("customFields", [], currentWorkspaceId));
 
   // ── UI state ─────────────────────────────────────────────────────────────────
   const [tab, setTab]                 = useState(() => getActiveTab().tab);
@@ -207,26 +202,27 @@ export default function App() {
     saveCurrentWorkspaceId(workspaceId);
     
     // Reload data for new workspace
-    setContacts(loadWorkspaceData("contacts", seedContacts, workspaceId));
-    setLeads(loadWorkspaceData("leads", seedLeads, workspaceId));
-    setProjects(loadWorkspaceData("projects", seedProjects, workspaceId));
-    setTasks(loadWorkspaceData("tasks", seedTasks, workspaceId));
-    setFollowUps(loadWorkspaceData("followUps", seedFollowUps, workspaceId));
-    setNotes(loadWorkspaceData("notes", seedNotes, workspaceId));
-    setDocuments(loadWorkspaceData("documents", seedDocuments, workspaceId));
-    setInvoices(loadWorkspaceData("invoices", seedInvoices, workspaceId));
-    setPayments(loadWorkspaceData("payments", seedPayments, workspaceId));
-    setProposals(loadWorkspaceData("proposals", seedProposals, workspaceId));
-    setCommunications(loadWorkspaceData("communications", seedCommunications, workspaceId));
-    setCalendarEvents(loadWorkspaceData("calendarEvents", seedCalendarEvents, workspaceId));
-    setSupportTickets(loadWorkspaceData("supportTickets", seedSupportTickets, workspaceId));
-    setWhatsappTemplates(loadWorkspaceData("whatsappTemplates", seedWhatsappTemplates, workspaceId));
-    setPromptHistory(loadWorkspaceData("promptHistory", seedPromptHistory, workspaceId));
-    setProjectLogs(loadWorkspaceData("projectLogs", seedProjectLogs, workspaceId));
-    setRoadmapItems(loadWorkspaceData("roadmapItems", seedRoadmapItems, workspaceId));
-    setTags(loadWorkspaceData("tags", seedTags, workspaceId));
-    setCustomFields(loadWorkspaceData("customFields", seedCustomFields, workspaceId));
-    setAudit(loadWorkspaceData("audit", initAudit(), workspaceId));
+    setContacts(loadWorkspaceData("contacts", [], workspaceId));
+    setLeads(loadWorkspaceData("leads", [], workspaceId));
+    setProjects(loadWorkspaceData("projects", [], workspaceId));
+    setTasks(loadWorkspaceData("tasks", [], workspaceId));
+    setFollowUps(loadWorkspaceData("followUps", [], workspaceId));
+    setNotes(loadWorkspaceData("notes", [], workspaceId));
+    setDocuments(loadWorkspaceData("documents", [], workspaceId));
+    setInvoices(loadWorkspaceData("invoices", [], workspaceId));
+    setPayments(loadWorkspaceData("payments", [], workspaceId));
+    setProposals(loadWorkspaceData("proposals", [], workspaceId));
+    setCommunications(loadWorkspaceData("communications", [], workspaceId));
+    setCalendarEvents(loadWorkspaceData("calendarEvents", [], workspaceId));
+    setSupportTickets(loadWorkspaceData("supportTickets", [], workspaceId));
+    setWhatsappTemplates(loadWorkspaceData("whatsappTemplates", [], workspaceId));
+    setEmailTemplates(loadWorkspaceData("emailTemplates", [], workspaceId));
+    setPromptHistory(loadWorkspaceData("promptHistory", [], workspaceId));
+    setProjectLogs(loadWorkspaceData("projectLogs", [], workspaceId));
+    setRoadmapItems(loadWorkspaceData("roadmapItems", [], workspaceId));
+    setTags(loadWorkspaceData("tags", [], workspaceId));
+    setCustomFields(loadWorkspaceData("customFields", [], workspaceId));
+    setAudit(loadWorkspaceData("audit", [], workspaceId));
     
     addAudit("Workspace", "Switch", `Switched to workspace: ${workspaces.find(w => w.id === workspaceId)?.name || 'workspace'}`);
     toast(`Switched to ${workspaces.find(w => w.id === workspaceId)?.name || 'workspace'}`);
@@ -281,26 +277,27 @@ export default function App() {
 
   // ── Reset all workspace data ───────────────────────────────────────────────────
   const resetData = () => {
-    setContacts(seedContacts);          saveWorkspaceData("contacts", seedContacts, currentWorkspaceId);
-    setLeads(seedLeads);                saveWorkspaceData("leads", seedLeads, currentWorkspaceId);
-    setProjects(seedProjects);          saveWorkspaceData("projects", seedProjects, currentWorkspaceId);
-    setTasks(seedTasks);                saveWorkspaceData("tasks", seedTasks, currentWorkspaceId);
-    setFollowUps(seedFollowUps);        saveWorkspaceData("followUps", seedFollowUps, currentWorkspaceId);
-    setNotes(seedNotes);                saveWorkspaceData("notes", seedNotes, currentWorkspaceId);
-    setDocuments(seedDocuments);        saveWorkspaceData("documents", seedDocuments, currentWorkspaceId);
-    setInvoices(seedInvoices);          saveWorkspaceData("invoices", seedInvoices, currentWorkspaceId);
-    setPayments(seedPayments);          saveWorkspaceData("payments", seedPayments, currentWorkspaceId);
-    setProposals(seedProposals);        saveWorkspaceData("proposals", seedProposals, currentWorkspaceId);
-    setCommunications(seedCommunications); saveWorkspaceData("communications", seedCommunications, currentWorkspaceId);
-    setCalendarEvents(seedCalendarEvents); saveWorkspaceData("calendarEvents", seedCalendarEvents, currentWorkspaceId);
-    setSupportTickets(seedSupportTickets); saveWorkspaceData("supportTickets", seedSupportTickets, currentWorkspaceId);
-    setWhatsappTemplates(seedWhatsappTemplates); saveWorkspaceData("whatsappTemplates", seedWhatsappTemplates, currentWorkspaceId);
-    setPromptHistory(seedPromptHistory);  saveWorkspaceData("promptHistory", seedPromptHistory, currentWorkspaceId);
-    setProjectLogs(seedProjectLogs);      saveWorkspaceData("projectLogs", seedProjectLogs, currentWorkspaceId);
-    setRoadmapItems(seedRoadmapItems);    saveWorkspaceData("roadmapItems", seedRoadmapItems, currentWorkspaceId);
-    setTags(seedTags);                    saveWorkspaceData("tags", seedTags, currentWorkspaceId);
-    setCustomFields(seedCustomFields);    saveWorkspaceData("customFields", seedCustomFields, currentWorkspaceId);
-    const a = initAudit(); setAudit(a);   saveWorkspaceData("audit", a, currentWorkspaceId);
+    setContacts([]);          saveWorkspaceData("contacts", [], currentWorkspaceId);
+    setLeads([]);                saveWorkspaceData("leads", [], currentWorkspaceId);
+    setProjects([]);          saveWorkspaceData("projects", [], currentWorkspaceId);
+    setTasks([]);                saveWorkspaceData("tasks", [], currentWorkspaceId);
+    setFollowUps([]);        saveWorkspaceData("followUps", [], currentWorkspaceId);
+    setNotes([]);                saveWorkspaceData("notes", [], currentWorkspaceId);
+    setDocuments([]);        saveWorkspaceData("documents", [], currentWorkspaceId);
+    setInvoices([]);          saveWorkspaceData("invoices", [], currentWorkspaceId);
+    setPayments([]);          saveWorkspaceData("payments", [], currentWorkspaceId);
+    setProposals([]);        saveWorkspaceData("proposals", [], currentWorkspaceId);
+    setCommunications([]); saveWorkspaceData("communications", [], currentWorkspaceId);
+    setCalendarEvents([]); saveWorkspaceData("calendarEvents", [], currentWorkspaceId);
+    setSupportTickets([]); saveWorkspaceData("supportTickets", [], currentWorkspaceId);
+    setWhatsappTemplates([]); saveWorkspaceData("whatsappTemplates", [], currentWorkspaceId);
+    setEmailTemplates([]);    saveWorkspaceData("emailTemplates", [], currentWorkspaceId);
+    setPromptHistory([]);     saveWorkspaceData("promptHistory", [], currentWorkspaceId);
+    setProjectLogs([]);      saveWorkspaceData("projectLogs", [], currentWorkspaceId);
+    setRoadmapItems([]);    saveWorkspaceData("roadmapItems", [], currentWorkspaceId);
+    setTags([]);                    saveWorkspaceData("tags", [], currentWorkspaceId);
+    setCustomFields([]);    saveWorkspaceData("customFields", [], currentWorkspaceId);
+    setAudit([]);                saveWorkspaceData("audit", [], currentWorkspaceId);
     toast("Workspace data reset to starter records");
   };
 
@@ -346,7 +343,7 @@ export default function App() {
   const searchData = {
     contacts, leads, projects, tasks, followUps, notes, documents, invoices,
     payments, proposals, communications, calendarEvents, supportTickets,
-    whatsappTemplates, promptHistory, projectLogs, roadmapItems, tags, customFields,
+    whatsappTemplates, emailTemplates, promptHistory, projectLogs, roadmapItems, tags, customFields,
   };
 
   if (!isAuthenticated) {
@@ -410,6 +407,12 @@ export default function App() {
         businessName={settings.businessName}
       />
 
+      {/* Mobile Bottom Nav */}
+      <BottomNav
+        tab={tab} setTab={handleTabChange}
+        setMobileMenu={setMobileMenu}
+      />
+
       {/* Main column */}
       <div className="main-content">
         <Topbar
@@ -434,7 +437,6 @@ export default function App() {
               promptHistory={promptHistory} projectLogs={projectLogs}
               currentWorkspace={currentWorkspace}
               exchangeRates={settings.exchangeRates || {}} currency={settings.currency || "USD"}
-              notes={notes} communications={communications} followUps={followUps}
               onNavigate={handleDashboardNavigate}
               onNewLead={handleNewLead}
               onNewTask={handleNewTask}
@@ -518,6 +520,7 @@ export default function App() {
             <CalendarTab calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} addAudit={addAudit} role={role}
               contacts={contacts} projects={projects}
               tasks={tasks} followUps={followUps} invoices={invoices} proposals={proposals}
+              roadmapItems={roadmapItems}
               workspaceId={currentWorkspaceId} onLinkedSave={handleLinkedRecordSave}
             />
           )}
@@ -572,14 +575,25 @@ export default function App() {
               followUps={followUps} invoices={invoices} payments={payments} proposals={proposals}
               communications={communications} supportTickets={supportTickets} roadmapItems={roadmapItems}
               promptHistory={promptHistory} projectLogs={projectLogs}
-              settings={settings} workspaceId={currentWorkspaceId}
+              settings={settings} role={role} addAudit={addAudit} workspaceId={currentWorkspaceId}
             />
           )}
           {tab === "audit" && (
             <AuditLogsTab audit={audit} setAudit={setAudit} role={role} workspaceId={currentWorkspaceId} />
           )}
           {tab === "security" && (
-            <SecurityTab settings={settings} setSettings={saveSettings} workspaceId={currentWorkspaceId} />
+            <SecurityTab
+              settings={settings} setSettings={saveSettings} role={role}
+              audit={audit} setAudit={setAudit} workspaceId={currentWorkspaceId}
+              contacts={contacts} leads={leads} projects={projects} tasks={tasks}
+              followUps={followUps} notes={notes} documents={documents}
+              invoices={invoices} payments={payments} proposals={proposals}
+              communications={communications} calendarEvents={calendarEvents}
+              supportTickets={supportTickets} whatsappTemplates={whatsappTemplates} emailTemplates={emailTemplates}
+              promptHistory={promptHistory} projectLogs={projectLogs} roadmapItems={roadmapItems}
+              tags={tags} customFields={customFields}
+              user={user} addAudit={addAudit}
+            />
           )}
           {tab === "settings" && (
             <SettingsTab
@@ -592,7 +606,9 @@ export default function App() {
             />
           )}
           {tab === "wa-templates" && (
-            <WhatsAppTemplatesTab whatsappTemplates={whatsappTemplates} setWhatsappTemplates={setWhatsappTemplates}
+            <WhatsAppTemplatesTab
+              whatsappTemplates={whatsappTemplates} setWhatsappTemplates={setWhatsappTemplates}
+              emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates}
               addAudit={addAudit} role={role} workspaceId={currentWorkspaceId} />
           )}
           {tab === "prompts" && (
@@ -616,6 +632,7 @@ export default function App() {
               tasks={tasks} setTasks={setTasks}
               promptHistory={promptHistory} projectLogs={projectLogs} supportTickets={supportTickets}
               notes={notes} setNotes={setNotes}
+              projects={projects}
               workspaceId={currentWorkspaceId} onLinkedSave={handleLinkedRecordSave}
             />
           )}

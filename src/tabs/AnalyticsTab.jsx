@@ -40,8 +40,7 @@ export default function AnalyticsTab({
   const [filterProject, setFilterProject] = useState("All");
   const [filterClient, setFilterClient] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
-  const [currentReportData, setCurrentReportData] = useState(null);
+
 
   // Data collections
   const allContacts = contacts || [];
@@ -58,23 +57,22 @@ export default function AnalyticsTab({
   const allProjectLogs = projectLogs || [];
   const allFollowUps = followUps || [];
 
-  // Apply date filter
-  const applyDateFilter = (items, dateField = "createdAt") => {
-    if (!dateRange.start && !dateRange.end) return items;
-    
-    return items.filter(item => {
-      const itemDate = item[dateField];
-      if (!itemDate) return true;
-      
-      const itemDateObj = new Date(itemDate);
-      const startDate = dateRange.start ? new Date(dateRange.start) : null;
-      const endDate = dateRange.end ? new Date(dateRange.end) : null;
-      
-      if (startDate && itemDateObj < startDate) return false;
-      if (endDate && itemDateObj > endDate) return false;
-      return true;
-    });
-  };
+  // Apply date filter — end date is inclusive (covers the full end day)
+  const applyDateFilter = useMemo(() => {
+    const startDate = dateRange.start ? new Date(dateRange.start) : null;
+    const endDate = dateRange.end ? new Date(dateRange.end + "T23:59:59.999") : null;
+    return (items, dateField = "createdAt") => {
+      if (!startDate && !endDate) return items;
+      return items.filter(item => {
+        const itemDate = item[dateField];
+        if (!itemDate) return true;
+        const d = new Date(itemDate);
+        if (startDate && d < startDate) return false;
+        if (endDate && d > endDate) return false;
+        return true;
+      });
+    };
+  }, [dateRange.start, dateRange.end]);
 
   // Calculate invoice paid amount
   const getInvoicePaid = useMemo(() => {
@@ -87,12 +85,12 @@ export default function AnalyticsTab({
     return paidMap;
   }, [allPayments]);
 
-  // Calculate invoice pending amount
-  const getInvoicePending = (invoice) => {
+  // Calculate invoice pending amount — stable reference for use in memos
+  const getInvoicePending = useMemo(() => (invoice) => {
     const paid = getInvoicePaid[invoice.id] || 0;
     const grandTotal = Number(invoice.grandTotal) || 0;
     return Math.max(0, grandTotal - paid);
-  };
+  }, [getInvoicePaid]);
 
   // 1. Owner Summary Report
   const ownerSummaryReport = useMemo(() => {
@@ -141,7 +139,7 @@ export default function AnalyticsTab({
         { label: "Total Invoiced", value: `₹${totalInvoiced.toLocaleString("en-IN")}`, color: "var(--accent)" },
         { label: "Total Collected", value: `₹${totalPaid.toLocaleString("en-IN")}`, color: "var(--success)" },
         { label: "Pending Revenue", value: `₹${totalPending.toLocaleString("en-IN")}`, color: totalPending > 0 ? "var(--warning)" : "var(--success)" },
-        { label: "Overdue Amount", value: `₹${totalOverdue.toLocaleString("en-IN")}`, color: totalOverdue > 0 ? "#DC2626" : "#374151" },
+        { label: "Overdue Amount", value: `₹${totalOverdue.toLocaleString("en-IN")}`, color: totalOverdue > 0 ? "var(--danger)" : "var(--text-muted)" },
         { label: "Active Projects", value: activeProjects, color: "var(--accent)" },
         { label: "Won Leads", value: wonLeads, color: "var(--success)" },
         { label: "Conversion Rate", value: `${conversionRate}%`, color: conversionRate >= 50 ? "var(--success)" : "var(--warning)" }
@@ -166,7 +164,7 @@ export default function AnalyticsTab({
         promptHistory: allPromptHistory
       }
     };
-  }, [allInvoices, allPayments, allProjects, allLeads, allTasks, allSupportTickets, allFollowUps, allPromptHistory, dateRange, getInvoicePaid]);
+  }, [allInvoices, allPayments, allProjects, allLeads, allTasks, allSupportTickets, allFollowUps, allPromptHistory, applyDateFilter, getInvoicePaid]);
 
   // 2. Project Report
   const projectReport = useMemo(() => {
@@ -231,7 +229,7 @@ export default function AnalyticsTab({
       ].filter(Boolean),
       detailedData: projectStats
     };
-  }, [allProjects, allInvoices, allPayments, allTasks, allProposals, dateRange, filterProject]);
+  }, [allProjects, allInvoices, allPayments, allTasks, allProposals, applyDateFilter, filterProject]);
 
   // 3. Finance Report
   const financeReport = useMemo(() => {
@@ -267,7 +265,7 @@ export default function AnalyticsTab({
         { label: "Total Invoiced", value: `₹${totalInvoiced.toLocaleString("en-IN")}`, color: "var(--accent)" },
         { label: "Total Collected", value: `₹${totalPaid.toLocaleString("en-IN")}`, color: "var(--success)" },
         { label: "Pending Revenue", value: `₹${totalPending.toLocaleString("en-IN")}`, color: totalPending > 0 ? "var(--warning)" : "var(--success)" },
-        { label: "Overdue Amount", value: `₹${totalOverdue.toLocaleString("en-IN")}`, color: totalOverdue > 0 ? "#DC2626" : "#374151" },
+        { label: "Overdue Amount", value: `₹${totalOverdue.toLocaleString("en-IN")}`, color: totalOverdue > 0 ? "var(--danger)" : "var(--text-muted)" },
         { label: "Paid Invoices", value: paidInvoices.length, color: "var(--success)" },
         { label: "Partially Paid", value: partiallyPaidInvoices.length, color: "var(--warning)" },
         { label: "Draft Invoices", value: draftInvoices.length, color: "var(--text-muted)" }
@@ -289,7 +287,7 @@ export default function AnalyticsTab({
         draftInvoices
       }
     };
-  }, [allInvoices, allPayments, dateRange, getInvoicePaid]);
+  }, [allInvoices, allPayments, applyDateFilter, getInvoicePaid]);
 
   // 4. Invoice Report
   const invoiceReport = useMemo(() => {
@@ -335,7 +333,7 @@ export default function AnalyticsTab({
         { label: "Total Amount", value: `₹${totalInvoiced.toLocaleString("en-IN")}`, color: "var(--accent)" },
         { label: "Collected", value: `₹${totalPaid.toLocaleString("en-IN")}`, color: "var(--success)" },
         { label: "Pending", value: `₹${totalPending.toLocaleString("en-IN")}`, color: totalPending > 0 ? "var(--warning)" : "var(--success)" },
-        { label: "Overdue", value: overdueInvoices.length, color: totalOverdue > 0 ? "#DC2626" : "#374151" },
+        { label: "Overdue", value: overdueInvoices.length, color: totalOverdue > 0 ? "var(--danger)" : "var(--text-muted)" },
         { label: "Avg. Collection", value: `₹${invoicesToAnalyze.length > 0 ? Math.round(totalPaid / invoicesToAnalyze.length) : 0}`, color: "var(--info)" },
         { label: "Collection Rate", value: `${totalInvoiced > 0 ? Math.round((totalPaid / totalInvoiced) * 100) : 0}%`, color: totalPaid / totalInvoiced >= 0.8 ? "var(--success)" : "var(--warning)" }
       ],
@@ -347,7 +345,7 @@ export default function AnalyticsTab({
       ].filter(Boolean),
       detailedData: invoiceStats
     };
-  }, [allInvoices, dateRange, filterStatus, getInvoicePaid, getInvoicePending]);
+  }, [allInvoices, applyDateFilter, filterStatus, getInvoicePaid, getInvoicePending]);
 
   // 5. Payment Report
   const paymentReport = useMemo(() => {
@@ -395,7 +393,7 @@ export default function AnalyticsTab({
         recentPayments
       }
     };
-  }, [allPayments, dateRange]);
+  }, [allPayments, applyDateFilter]);
 
   // 6. Lead Pipeline Report
   const leadPipelineReport = useMemo(() => {
@@ -443,7 +441,7 @@ export default function AnalyticsTab({
         pipelineValue
       }
     };
-  }, [allLeads, dateRange]);
+  }, [allLeads, applyDateFilter]);
 
   // 7. Task Productivity Report
   const taskProductivityReport = useMemo(() => {
@@ -476,8 +474,8 @@ export default function AnalyticsTab({
         { label: "Total Tasks", value: totalTasks, color: "var(--accent)" },
         { label: "Completed", value: completedTasks, color: "var(--success)" },
         { label: "Completion Rate", value: `${completionRate}%`, color: completionRate >= 70 ? "var(--success)" : "var(--warning)" },
-        { label: "Overdue", value: overdueTasks, color: overdueTasks > 0 ? "#DC2626" : "#374151" },
-        { label: "Blocked", value: blockedTasks, color: blockedTasks > 0 ? "var(--danger)" : "#374151" },
+        { label: "Overdue", value: overdueTasks, color: overdueTasks > 0 ? "var(--danger)" : "var(--text-muted)" },
+        { label: "Blocked", value: blockedTasks, color: blockedTasks > 0 ? "var(--danger)" : "var(--text-muted)" },
         { label: "Active", value: tasksByStatus["Active"] || 0, color: "var(--accent)" },
         { label: "Projects", value: Object.keys(tasksByProject).length, color: "var(--info)" }
       ],
@@ -495,7 +493,7 @@ export default function AnalyticsTab({
         blockedTasks
       }
     };
-  }, [allTasks, dateRange]);
+  }, [allTasks, applyDateFilter]);
 
   // 8. Roadmap Progress Report
   const roadmapProgressReport = useMemo(() => {
@@ -538,10 +536,10 @@ export default function AnalyticsTab({
         { label: "Total Items", value: totalItems, color: "var(--accent)" },
         { label: "Completed", value: completedItems, color: "var(--success)" },
         { label: "Completion Rate", value: `${completionRate}%`, color: completionRate >= 70 ? "var(--success)" : "var(--warning)" },
-        { label: "Blocked", value: blockedItems, color: blockedItems > 0 ? "var(--danger)" : "#374151" },
+        { label: "Blocked", value: blockedItems, color: blockedItems > 0 ? "var(--danger)" : "var(--text-muted)" },
         { label: "In Progress", value: roadmapByStatus["In Progress"] || 0, color: "var(--accent)" },
         { label: "Planned", value: roadmapByStatus["Planned"] || 0, color: "var(--info)" },
-        { label: "Projects", value: Object.keys(roadmapByProject).length, color: "#8B5CF6" }
+        { label: "Projects", value: Object.keys(roadmapByProject).length, color: "var(--purple)" }
       ],
       insights: [
         `✅ Roadmap Progress: ${completedItems} of ${totalItems} items completed (${completionRate}% completion rate)`,
@@ -557,7 +555,7 @@ export default function AnalyticsTab({
         blockedItems
       }
     };
-  }, [allRoadmapItems, dateRange]);
+  }, [allRoadmapItems, applyDateFilter]);
 
   // 9. Support Ticket Report
   const supportTicketReport = useMemo(() => {
@@ -590,7 +588,7 @@ export default function AnalyticsTab({
         { label: "Open", value: openTickets, color: "var(--warning)" },
         { label: "Closed", value: closedTickets, color: "var(--success)" },
         { label: "Resolution Rate", value: `${resolutionRate}%`, color: resolutionRate >= 80 ? "var(--success)" : "var(--warning)" },
-        { label: "High Priority", value: highPriorityTickets, color: highPriorityTickets > 0 ? "#DC2626" : "#374151" },
+        { label: "High Priority", value: highPriorityTickets, color: highPriorityTickets > 0 ? "var(--danger)" : "var(--text-muted)" },
         { label: "Avg Response Time", value: `${avgResponseTime}h`, color: avgResponseTime > 24 ? "var(--danger)" : "var(--info)" },
         { label: "Medium Priority", value: ticketsByPriority["Medium"] || 0, color: "var(--accent)" }
       ],
@@ -609,7 +607,7 @@ export default function AnalyticsTab({
         avgResponseTime
       }
     };
-  }, [allSupportTickets, dateRange]);
+  }, [allSupportTickets, applyDateFilter]);
 
   // 10. Prompt History Report
   const promptHistoryReport = useMemo(() => {
@@ -641,7 +639,7 @@ export default function AnalyticsTab({
         { label: "Total Prompts", value: totalPrompts, color: "var(--accent)" },
         { label: "Successful", value: successfulPrompts, color: "var(--success)" },
         { label: "Success Rate", value: `${successRate}%`, color: successRate >= 90 ? "var(--success)" : "var(--warning)" },
-        { label: "Failed", value: failedPrompts, color: failedPrompts > 0 ? "var(--danger)" : "#374151" },
+        { label: "Failed", value: failedPrompts, color: failedPrompts > 0 ? "var(--danger)" : "var(--text-muted)" },
         { label: "Avg Tokens", value: avgTokens, color: avgTokens > 1000 ? "var(--warning)" : "var(--info)" },
         { label: "Modules", value: Object.keys(promptsByModule).length, color: "var(--accent)" },
         { label: "Pending", value: promptsByStatus["Pending"] || 0, color: "var(--warning)" }
@@ -660,7 +658,7 @@ export default function AnalyticsTab({
         avgTokens
       }
     };
-  }, [allPromptHistory, dateRange]);
+  }, [allPromptHistory, applyDateFilter]);
 
   // 11. Project Logs Report
   const projectLogsReport = useMemo(() => {
@@ -693,9 +691,9 @@ export default function AnalyticsTab({
         { label: "Total Logs", value: totalLogs, color: "var(--accent)" },
         { label: "Projects", value: Object.keys(logsByProject).length, color: "var(--info)" },
         { label: "Avg Logs/Project", value: avgLogsPerProject, color: avgLogsPerProject > 10 ? "var(--accent)" : "var(--success)" },
-        { label: "Activity Types", value: Object.keys(logsByType).length, color: "#8B5CF6" },
+        { label: "Activity Types", value: Object.keys(logsByType).length, color: "var(--purple)" },
         { label: "Recent Activity", value: recentActivity.length, color: "var(--warning)" },
-        { label: "General Logs", value: logsByType["General"] || 0, color: "#6B7280" },
+        { label: "General Logs", value: logsByType["General"] || 0, color: "var(--text-muted)" },
         { label: "Update Logs", value: logsByType["Update"] || 0, color: "var(--accent)" }
       ],
       insights: [
@@ -712,7 +710,7 @@ export default function AnalyticsTab({
         avgLogsPerProject
       }
     };
-  }, [allProjectLogs, dateRange]);
+  }, [allProjectLogs, applyDateFilter]);
 
   // 12. Follow-Up Report
   const followUpReport = useMemo(() => {
@@ -750,7 +748,7 @@ export default function AnalyticsTab({
         { label: "Pending", value: pendingFollowUps, color: "var(--warning)" },
         { label: "Completed", value: completedFollowUps, color: "var(--success)" },
         { label: "Completion Rate", value: `${completionRate}%`, color: completionRate >= 80 ? "var(--success)" : "var(--warning)" },
-        { label: "Overdue", value: overdueFollowUps, color: overdueFollowUps > 0 ? "#DC2626" : "#374151" },
+        { label: "Overdue", value: overdueFollowUps, color: overdueFollowUps > 0 ? "var(--danger)" : "var(--text-muted)" },
         { label: "Upcoming", value: upcomingFollowUps, color: "var(--info)" },
         { label: "Contacts", value: Object.keys(followUpsByContact).length, color: "var(--accent)" }
       ],
@@ -769,7 +767,7 @@ export default function AnalyticsTab({
         upcomingFollowUps
       }
     };
-  }, [allFollowUps, dateRange]);
+  }, [allFollowUps, applyDateFilter]);
 
   // 13. Client/Contact Report
   const clientContactReport = useMemo(() => {
@@ -816,10 +814,10 @@ export default function AnalyticsTab({
       summary: [
         { label: "Total Contacts", value: totalContacts, color: "var(--accent)" },
         { label: "Active Clients", value: activeClients, color: "var(--success)" },
-        { label: "Inactive Clients", value: inactiveClients, color: "#6B7280" },
+        { label: "Inactive Clients", value: inactiveClients, color: "var(--text-muted)" },
         { label: "Client Types", value: Object.keys(contactsByType).length, color: "var(--info)" },
         { label: "Avg Projects/Client", value: avgProjectsPerClient, color: avgProjectsPerClient > 2 ? "var(--accent)" : "var(--warning)" },
-        { label: "Lead Sources", value: Object.keys(contactsBySource).length, color: "#8B5CF6" },
+        { label: "Lead Sources", value: Object.keys(contactsBySource).length, color: "var(--purple)" },
         { label: "Top Clients", value: topClients.length, color: "var(--warning)" }
       ],
       insights: [
@@ -837,7 +835,7 @@ export default function AnalyticsTab({
         avgProjectsPerClient
       }
     };
-  }, [allContacts, allProjects, allInvoices, dateRange]);
+  }, [allContacts, allProjects, allInvoices, applyDateFilter]);
 
   // Get current report based on selection
   const currentReport = useMemo(() => {
@@ -898,14 +896,7 @@ export default function AnalyticsTab({
           `).join('')}
         </div>
         
-        ${currentReport.insights && currentReport.insights.length > 0 ? `
-          <div style="margin: 30px 0;">
-            <h3 style="color: #333; margin-bottom: 15px;">Key Insights</h3>
-            <ul style="color: #4B5563; line-height: 1.6;">
-              ${currentReport.insights.map(insight => `<li style="margin-bottom: 8px;">${insight}</li>`).join('')}
-            </ul>
-          </div>
-        ` : ''}
+
         
         <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB; color: #6B7280; font-size: 12px;">
           Founder OS CRM | Professional Business Intelligence
@@ -939,33 +930,40 @@ export default function AnalyticsTab({
       </div>
 
       {/* Report Type Selector */}
-      <SectionCard title="Select Report Type" style={{ marginBottom: 25 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {REPORT_TYPES.map(report => (
+      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 20, marginBottom: 25, alignItems: "start" }}>
+        <div style={{ backgroundColor: "var(--bg-secondary)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
+          <div style={{ padding: "12px 14px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+            Report Type
+          </div>
+          {REPORT_TYPES.map((report, i) => (
             <button
               key={report.id}
               onClick={() => handleReportSelect(report.id)}
               style={{
-                ...btnStyle,
-                backgroundColor: selectedReport === report.id ? "var(--accent)" : "var(--bg-secondary)",
+                display: "flex", alignItems: "center", gap: 9,
+                width: "100%", textAlign: "left",
+                padding: "10px 14px",
+                fontSize: 13,
+                background: selectedReport === report.id ? "var(--accent)" : "transparent",
                 color: selectedReport === report.id ? "white" : "var(--text)",
-                border: selectedReport === report.id ? "none" : "1px solid var(--border)",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "12px 16px",
-                fontSize: 14
+                border: "none",
+                borderBottom: i < REPORT_TYPES.length - 1 ? "1px solid var(--border)" : "none",
+                cursor: "pointer",
+                fontWeight: selectedReport === report.id ? 600 : 400,
+                transition: "background 0.15s"
               }}
             >
-              <span style={{ fontSize: 16 }}>{report.icon}</span>
+              <span style={{ fontSize: 15, opacity: 0.85 }}>{report.icon}</span>
               {report.label}
             </button>
           ))}
         </div>
-      </SectionCard>
+
+        {/* Right column: filters + report content */}
+        <div>
 
       {/* Filters */}
-      <SectionCard title="Report Filters" style={{ marginBottom: 25 }}>
+      <SectionCard title="Report Filters" style={{ marginBottom: 20 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 15 }}>
           <FormField label="Date Range Start">
             <input
@@ -995,6 +993,25 @@ export default function AnalyticsTab({
               {allContacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </FormField>
+          <FormField label="Filter by Status">
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={inputStyle}>
+              <option value="All">All Statuses</option>
+              {INVOICE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </FormField>
+          <FormField label="">
+            <button
+              onClick={() => {
+                setDateRange({ start: "", end: "" });
+                setFilterProject("All");
+                setFilterClient("All");
+                setFilterStatus("All");
+              }}
+              style={{ ...btnStyle, backgroundColor: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border)", width: "100%", marginTop: 22 }}
+            >
+              ✕ Clear Filters
+            </button>
+          </FormField>
         </div>
       </SectionCard>
 
@@ -1013,43 +1030,92 @@ export default function AnalyticsTab({
             ))}
           </div>
 
-          {/* Insights */}
-          {currentReport.insights && currentReport.insights.length > 0 && (
-            <div style={{ backgroundColor: "var(--bg-secondary)", borderRadius: 8, padding: 20, marginBottom: 25 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 15 }}>Key Insights</h3>
-              <ul style={{ color: "var(--text-muted)", lineHeight: 1.6, paddingLeft: 20 }}>
-                {currentReport.insights.map((insight, idx) => (
-                  <li key={idx} style={{ marginBottom: 8 }}>{insight}</li>
+          {/* Progress bars for percentage/rate stats */}
+          {(() => {
+            const rateBars = currentReport.summary.filter(s =>
+              typeof s.value === "string" && s.value.endsWith("%")
+            );
+            if (rateBars.length === 0) return null;
+            return (
+              <div style={{ marginBottom: 20 }}>
+                {rateBars.map((s, i) => (
+                  <Bar
+                    key={i}
+                    label={s.label}
+                    value={parseFloat(s.value)}
+                    total={100}
+                    color={s.color}
+                  />
                 ))}
-              </ul>
-            </div>
-          )}
+              </div>
+            );
+          })()}
 
           {/* Detailed Data Preview */}
-          {currentReport.detailedData && (
-            <div>
-              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 15 }}>Detailed Data</h3>
-              <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
-                {Object.keys(currentReport.detailedData).length} data points available
-                {currentReport.detailedData.data && ` (${currentReport.detailedData.data.length} records)`}
+          {currentReport.detailedData && (() => {
+            const d = currentReport.detailedData;
+            // Pick the primary array to display as a table
+            const rows = Array.isArray(d) ? d
+              : d.data ?? d.invoices ?? d.payments ?? d.projects ?? d.leads
+                ?? d.tasks ?? d.tickets ?? d.prompts ?? d.logs ?? d.contacts
+                ?? d.followUps ?? d.roadmapItems ?? null;
+
+            if (!rows || rows.length === 0) return null;
+
+            const cols = Object.keys(rows[0]).filter(k =>
+              !["id","projectId","contactId","clientId","invoiceId"].includes(k)
+            ).slice(0, 7);
+
+            const fmt = (v) => {
+              if (v == null || v === "") return "—";
+              if (typeof v === "number") return v.toLocaleString("en-IN");
+              if (typeof v === "boolean") return v ? "Yes" : "No";
+              if (typeof v === "object") return JSON.stringify(v).slice(0, 40);
+              return String(v).slice(0, 60);
+            };
+
+            return (
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 12 }}>
+                  Detailed Records <span style={{ fontWeight: 400, fontSize: 13, color: "var(--text-muted)" }}>({rows.length} total)</span>
+                </h3>
+                <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid var(--border)" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "var(--bg-secondary)" }}>
+                        {cols.map(col => (
+                          <th key={col} style={{ padding: "10px 14px", textAlign: "left", color: "var(--text-muted)", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>
+                            {col.replace(/([A-Z])/g, " $1").trim()}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.slice(0, 25).map((row, i) => (
+                        <tr key={i} style={{ borderBottom: "1px solid var(--border)", backgroundColor: i % 2 === 0 ? "transparent" : "var(--bg-secondary)" }}>
+                          {cols.map(col => (
+                            <td key={col} style={{ padding: "9px 14px", color: "var(--text)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {fmt(row[col])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {rows.length > 25 && (
+                    <div style={{ padding: "10px 14px", fontSize: 12, color: "var(--text-muted)", borderTop: "1px solid var(--border)" }}>
+                      Showing 25 of {rows.length} records — export CSV to see all
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </SectionCard>
       )}
 
-      {/* Print Preview Modal */}
-      {showPrintPreview && currentReportData && (
-        <Modal
-          title="Print Preview"
-          onClose={() => setShowPrintPreview(false)}
-          size="lg"
-        >
-          <div style={{ padding: 20 }}>
-            <div dangerouslySetInnerHTML={{ __html: currentReportData }} />
-          </div>
-        </Modal>
-      )}
+        </div>{/* end right column */}
+      </div>{/* end grid */}
     </div>
   );
 }

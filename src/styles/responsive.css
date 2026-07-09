@@ -12,7 +12,7 @@
 /* ── Mobile (≤768px) ────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .sidebar { display: none !important; }
-  .mobile-menu-btn { display: flex !important; }
+  .mobile-menu-btn { display: none !important; }
 
   .page-content { padding: 14px 14px; padding-bottom: 80px !important; }
   .module-header { gap: 8px; }

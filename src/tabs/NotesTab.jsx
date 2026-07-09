@@ -112,7 +112,7 @@ export default function NotesTab({ notes, setNotes, addAudit, role, tags, projec
       &&(filterTag==="All"||(n.tags||[]).includes(filterTag))
       &&(filterRelated==="All"||n.relatedType===filterRelated)
     );
-    return [...list.filter(n=>n.pinned),...list.filter(n=>!n.pinned)];
+    return list.slice().sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0));
   },[notes,search,filterType,filterTag,filterRelated]);
 
   const save = f => {
@@ -127,15 +127,11 @@ export default function NotesTab({ notes, setNotes, addAudit, role, tags, projec
 
   // Linked action helpers (Phase 11)
   const convertToTask = (note) => {
-    if (!tasks) return;
-    const nt = { id:genId(), title:note.title, description:note.body||"", project:note.relatedTo||"",
-      status:"Todo", priority:"Medium", dueDate:"", checklist:[], tags:note.tags||[],
-      createdAt:new Date().toISOString().slice(0,10) };
-    const updated = [nt, ...(tasks||[])];
-    if (typeof window !== "undefined") {
-      // tasks state isn't directly settable from NotesTab; pass via addAudit signal
-      // App.jsx wires setTasks as needed — use onLinkedSave pattern via addAudit
-    }
+    if (!onLinkedSave) return;
+    onLinkedSave("task", {
+      title: note.title, description: note.body||"", project: note.relatedTo||"",
+      status:"Todo", priority:"Medium", dueDate:"", checklist:[], tags: note.tags||[],
+    });
     addAudit("Notes","Convert",`Note converted to task: ${note.title}`);
     toast("Task created — check Tasks tab","info");
   };
@@ -161,10 +157,15 @@ export default function NotesTab({ notes, setNotes, addAudit, role, tags, projec
 
   const relatedTypes = ["All",...new Set((notes||[]).map(n=>n.relatedType).filter(Boolean))];
 
+  const closeForm = () => { setShowForm(false); setEditing(null); };
+
+  const filterSelectStyle = { ...inputStyle, width:"auto", fontSize:12, height:32, padding:"0 10px", borderRadius:6, color:"var(--text-muted)" };
+  const cardBtnStyle = (extra={}) => ({ fontSize:11, padding:"3px 9px", borderRadius:6, border:"1px solid var(--border)", background:"none", cursor:"pointer", ...extra });
+
   return (
     <div>
       {confirm&&<Confirm msg="Delete this note?" onYes={()=>del(confirm)} onNo={()=>setConfirm(null)} />}
-      {(showForm||editing)&&<Modal title={editing?"Edit note":"Add note"} onClose={()=>{setShowForm(false);setEditing(null);}} width={620}><NoteForm initial={editing||{}} onSave={save} onClose={()=>{setShowForm(false);setEditing(null);}} projects={projects||[]} contacts={contacts||[]} leads={leads||[]} tasks={tasks||[]} invoices={invoices||[]} proposals={proposals||[]} roadmapItems={roadmapItems||[]} supportTickets={supportTickets||[]} tags={tags||[]} /></Modal>}
+      {(showForm||editing)&&<Modal title={editing?"Edit note":"Add note"} onClose={closeForm} width={620}><NoteForm initial={editing||{}} onSave={save} onClose={closeForm} projects={projects||[]} contacts={contacts||[]} leads={leads||[]} tasks={tasks||[]} invoices={invoices||[]} proposals={proposals||[]} roadmapItems={roadmapItems||[]} supportTickets={supportTickets||[]} tags={tags||[]} /></Modal>}
       {viewing && (
         <Modal title={viewing.title} onClose={() => setViewing(null)} width={560}>
           <div>
@@ -190,7 +191,7 @@ export default function NotesTab({ notes, setNotes, addAudit, role, tags, projec
               <div>
                 <div style={{ fontSize:11, color:"var(--text-muted)", textTransform:"uppercase", marginBottom:8 }}>Linked Actions</div>
                 <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                  <button style={btnStyle("soft","sm")} onClick={() => { convertToTask(viewing); setViewing(null); }}>✅ Convert to Task</button>
+                  {onLinkedSave && <button style={btnStyle("soft","sm")} onClick={() => { convertToTask(viewing); setViewing(null); }}>✅ Convert to Task</button>}
                   {setFollowUps && <button style={btnStyle("soft","sm")} onClick={() => { addFollowUp(viewing); setViewing(null); }}>📞 Add Follow-Up</button>}
                   {setCalendarEvents && <button style={btnStyle("soft","sm")} onClick={() => { addCalendarEvent(viewing); setViewing(null); }}>📅 Add Calendar Event</button>}
                   {onLinkedSave && <button style={btnStyle("soft","sm")} onClick={() => { onLinkedSave("document",{name:`Doc — ${viewing.title}`,type:"Other",relatedClient:viewing.relatedTo||"",status:"Draft",notes:viewing.body?.slice(0,200)||""}); setViewing(null); }}>📄 Add Document</button>}
@@ -222,15 +223,15 @@ export default function NotesTab({ notes, setNotes, addAudit, role, tags, projec
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20,alignItems:"center"}}>
         <SearchInput value={search} onChange={setSearch} placeholder="Search notes…" />
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginLeft:4}}>
-          <select style={{...inputStyle,width:"auto",fontSize:12,height:32,padding:"0 10px",borderRadius:6,color:"var(--text-muted)"}} value={filterType} onChange={e=>setFilterType(e.target.value)}>
+          <select style={filterSelectStyle} value={filterType} onChange={e=>setFilterType(e.target.value)}>
             <option value="All">All types</option>
             {NOTE_TYPES.map(t=><option key={t}>{t}</option>)}
           </select>
-          <select style={{...inputStyle,width:"auto",fontSize:12,height:32,padding:"0 10px",borderRadius:6,color:"var(--text-muted)"}} value={filterTag} onChange={e=>setFilterTag(e.target.value)}>
+          <select style={filterSelectStyle} value={filterTag} onChange={e=>setFilterTag(e.target.value)}>
             <option value="All">All tags</option>
             {allNoteTags.map(t=><option key={t}>{t}</option>)}
           </select>
-          <select style={{...inputStyle,width:"auto",fontSize:12,height:32,padding:"0 10px",borderRadius:6,color:"var(--text-muted)"}} value={filterRelated} onChange={e=>setFilterRelated(e.target.value)}>
+          <select style={filterSelectStyle} value={filterRelated} onChange={e=>setFilterRelated(e.target.value)}>
             {relatedTypes.map(t=><option key={t} value={t}>{t==="All"?"All linked types":t}</option>)}
           </select>
           {(filterType!=="All"||filterTag!=="All"||filterRelated!=="All"||search)&&(
@@ -275,20 +276,20 @@ export default function NotesTab({ notes, setNotes, addAudit, role, tags, projec
                   {role!=="Viewer"&&(
                     <div style={{display:"flex",gap:4}}>
                       <button
-                        style={{fontSize:11,padding:"3px 9px",borderRadius:6,border:"1px solid var(--border)",background:"none",color:n.pinned?"#b07d00":"var(--text-muted)",cursor:"pointer",fontWeight:n.pinned?600:400}}
+                        style={cardBtnStyle({color:n.pinned?"#b07d00":"var(--text-muted)",fontWeight:n.pinned?600:400})}
                         onClick={()=>togglePin(n.id)}
                       >{n.pinned?"Unpin":"Pin"}</button>
                       <button
-                        style={{fontSize:11,padding:"3px 9px",borderRadius:6,border:"1px solid var(--border)",background:"none",color:"var(--accent)",cursor:"pointer",fontWeight:500}}
+                        style={cardBtnStyle({color:"var(--accent)",fontWeight:500})}
                         onClick={()=>setViewing(n)}
                       >View</button>
                       <button
-                        style={{fontSize:11,padding:"3px 9px",borderRadius:6,border:"1px solid var(--border)",background:"none",color:"var(--text-muted)",cursor:"pointer"}}
+                        style={cardBtnStyle({color:"var(--text-muted)"})}
                         onClick={()=>setEditing(n)}
                       >Edit</button>
                       {(role==="Owner"||role==="Admin")&&(
                         <button
-                          style={{fontSize:11,padding:"3px 9px",borderRadius:6,border:"1px solid rgba(220,53,69,0.25)",background:"none",color:"var(--danger,#dc3545)",cursor:"pointer"}}
+                          style={cardBtnStyle({border:"1px solid rgba(220,53,69,0.25)",color:"var(--danger,#dc3545)"})}
                           onClick={()=>setConfirm(n.id)}
                         >Delete</button>
                       )}

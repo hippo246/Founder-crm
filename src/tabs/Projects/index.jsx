@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { Modal, Confirm, SearchInput, EmptyState, StatMini, btnStyle, toast } from "../../components/ui/UI.jsx";
 import { genId, isOverdue } from "../../lib/helpers.js";
 import { saveWorkspaceData } from "../../lib/storage.js";
@@ -48,6 +48,11 @@ function ProjectDetail({ project, tasks, notes, invoices, payments, proposals, d
 
   const match = useCallback((item) => item.projectId === pid || item.project === name, [pid, name]);
 
+  const linkedRoadmapItemIds = Array.isArray(project.linkedRoadmapItemIds) ? project.linkedRoadmapItemIds : [];
+  const matchRoadmap = useCallback((r) =>
+    r.projectId === pid || r.project === name || r.linkedProjectId === pid || linkedRoadmapItemIds.includes(r.id),
+  [pid, name, linkedRoadmapItemIds]);
+
   const linked = useMemo(() => ({
     tasks:     (tasks     || []).filter(match),
     notes:     (notes     || []).filter(match),
@@ -57,11 +62,11 @@ function ProjectDetail({ project, tasks, notes, invoices, payments, proposals, d
     leads:     (leads     || []).filter(match),
     comms:     (communications || []).filter(match),
     followUps: (followUps || []).filter(match),
-    roadmap:   (roadmapItems  || []).filter(match),
+    roadmap:   (roadmapItems  || []).filter(matchRoadmap),
     support:   (supportTickets|| []).filter(match),
     logs:      (projectLogs   || []).filter(l => l.projectId === pid),
     payments:  (payments      || []).filter(match),
-  }), [pid, match, tasks, notes, invoices, proposals, documents, leads, communications, followUps, roadmapItems, supportTickets, projectLogs, payments]);
+  }), [pid, match, matchRoadmap, tasks, notes, invoices, proposals, documents, leads, communications, followUps, roadmapItems, supportTickets, projectLogs, payments]);
 
   const tags = Array.isArray(project.tags) ? project.tags : [];
   const STATUS_COLORS = {
@@ -309,6 +314,12 @@ export default function ProjectsTab({
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [viewMode, setViewMode] = useState("grid");
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importFileRef = useRef(null);
+  const importMenuRef = useRef(null);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
 
   useEffect(() => {
@@ -316,6 +327,15 @@ export default function ProjectsTab({
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
   }, []);
+
+  useEffect(() => {
+    if (!importMenuOpen) return;
+    const handler = (e) => {
+      if (importMenuRef.current && !importMenuRef.current.contains(e.target)) setImportMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [importMenuOpen]);
 
   const filtered = useMemo(() => {
     let result = projects;
@@ -331,8 +351,17 @@ export default function ProjectsTab({
         (Array.isArray(p.tags) && p.tags.some(t => t.toLowerCase().includes(q)))
       );
     }
+    const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
+    result = [...result].sort((a, b) => {
+      if (sortBy === "name")     return (a.name || "").localeCompare(b.name || "");
+      if (sortBy === "deadline") return (a.deadline || "9999").localeCompare(b.deadline || "9999");
+      if (sortBy === "budget")   return (Number(b.budget) || 0) - (Number(a.budget) || 0);
+      if (sortBy === "progress") return (Number(b.progress) || 0) - (Number(a.progress) || 0);
+      if (sortBy === "priority") return (PRIORITY_ORDER[a.priority] ?? 1) - (PRIORITY_ORDER[b.priority] ?? 1);
+      return (b.createdAt || "").localeCompare(a.createdAt || ""); // default: newest first
+    });
     return result;
-  }, [projects, search, statusFilter]);
+  }, [projects, search, statusFilter, sortBy]);
 
   const handleSave = useCallback((data) => {
     if (editing) {
@@ -366,7 +395,165 @@ export default function ProjectsTab({
   }, [confirmDelete, projects, currentWorkspaceId, addAudit]);
 
   const handleExport = useCallback(() => { exportToCSV(projects, "projects"); toast("Projects exported"); }, [projects]);
-  const closeDetail = useCallback(() => setViewing(null), []);
+
+  const handleDuplicate = useCallback((project) => {
+    const copy = { ...project, id: genId(), name: `${project.name} (Copy)`, createdAt: new Date().toISOString().slice(0, 10) };
+    const updated = [copy, ...projects];
+    setProjects(updated);
+    saveWorkspaceData("projects", updated, currentWorkspaceId);
+    toast(`Duplicated "${project.name}"`);
+    addAudit("Projects", "Duplicate", `Duplicated project: ${project.name}`);
+  }, [projects, currentWorkspaceId, addAudit]);
+  const handleDownloadTemplate = useCallback(() => {
+    setImportMenuOpen(false);
+    import("https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs").then(XLSX => {
+      const wb = XLSX.utils.book_new();
+
+      // ── Projects sheet ──────────────────────────────────────────────────────
+      const headers = [
+        "Project Name *", "Client", "Industry", "Status", "Priority",
+        "Start Date", "Deadline", "Budget (INR)", "Paid (INR)", "Progress %",
+        "Tech Stack", "Description", "Tags (comma-sep)",
+      ];
+      const wsData = [headers];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      ws["!cols"] = [20,18,15,14,12,13,13,14,12,13,20,30,22].map(w => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws, "Projects");
+
+      // ── Instructions sheet ──────────────────────────────────────────────────
+      const instrData = [
+        ["How to Import Projects", ""],
+        ["", ""],
+        ["REQUIRED FIELD", ""],
+        ["Project Name *", "Every row must have a name — rows without one are skipped."],
+        ["", ""],
+        ["FIELD REFERENCE", ""],
+        ["status",               "Planning | In Progress | On Hold | Completed | Cancelled  (default: Planning)"],
+        ["priority",             "High | Medium | Low  (default: Medium)"],
+        ["startDate / deadline", "Format: YYYY-MM-DD  e.g. 2025-06-30"],
+        ["budget / paid",        "Numbers only — no currency symbols."],
+        ["progress",             "Integer 0-100. Setting 100 auto-sets status to Completed."],
+        ["techStack",            "Free text e.g. React, Node.js, PostgreSQL"],
+        ["tags",                 "Comma-separated e.g. design,branding,web"],
+        ["description",          "Free text, any length."],
+        ["", ""],
+        ["TIPS", ""],
+        ["Keep headers",         "Do not rename or reorder column headers in row 1."],
+        ["Extra columns",        "Any extra columns you add are ignored safely."],
+      ];
+      const wi = XLSX.utils.aoa_to_sheet(instrData);
+      wi["!cols"] = [{ wch: 24 }, { wch: 65 }];
+      XLSX.utils.book_append_sheet(wb, wi, "Instructions");
+
+      XLSX.writeFile(wb, "projects_import_template.xlsx");
+    }).catch(() => toast("Could not generate template. Check your connection.", "error"));
+  }, []);
+
+  const handleImportFile = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setImportMenuOpen(false);
+    setImporting(true);
+
+    import("https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs").then(XLSX => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
+          const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes("project")) || wb.SheetNames[0];
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
+
+          const FIELD_MAP = {
+            "project name *": "name", "project name": "name", "name": "name",
+            "client": "client",
+            "industry": "industry",
+            "status": "status",
+            "priority": "priority",
+            "start date": "startDate", "startdate": "startDate",
+            "deadline": "deadline",
+            "budget (inr)": "budget", "budget": "budget",
+            "paid (inr)": "paid", "paid": "paid",
+            "progress %": "progress", "progress": "progress",
+            "tech stack": "techStack", "techstack": "techStack",
+            "description": "description",
+            "tags (comma-sep)": "tags", "tags": "tags",
+          };
+
+          const VALID_STATUSES   = ["Planning", "In Progress", "On Hold", "Completed", "Cancelled"];
+          const VALID_PRIORITIES = ["High", "Medium", "Low"];
+
+          const formatDate = (val) => {
+            if (!val) return "";
+            if (val instanceof Date) return val.toISOString().slice(0, 10);
+            const s = String(val).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+            const d = new Date(s);
+            return isNaN(d) ? "" : d.toISOString().slice(0, 10);
+          };
+
+          const imported = [];
+          const skipped  = [];
+
+          rows.forEach((raw, i) => {
+            // Normalize keys
+            const row = {};
+            Object.entries(raw).forEach(([k, v]) => {
+              const mapped = FIELD_MAP[k.toLowerCase().trim()];
+              if (mapped) row[mapped] = v;
+            });
+
+            if (!row.name || !String(row.name).trim()) { skipped.push(i + 2); return; }
+
+            const progress = Math.min(100, Math.max(0, Number(row.progress) || 0));
+            const status   = VALID_STATUSES.includes(row.status) ? row.status
+                             : progress === 100 ? "Completed" : "Planning";
+            const priority = VALID_PRIORITIES.includes(row.priority) ? row.priority : "Medium";
+            const tags     = row.tags ? String(row.tags).split(",").map(t => t.trim()).filter(Boolean) : [];
+
+            imported.push({
+              id:          genId(),
+              createdAt:   new Date().toISOString().slice(0, 10),
+              name:        String(row.name).trim(),
+              client:      String(row.client || "").trim(),
+              industry:    String(row.industry || "").trim(),
+              status,
+              priority,
+              startDate:   formatDate(row.startDate),
+              deadline:    formatDate(row.deadline),
+              budget:      Number(row.budget) || 0,
+              paid:        Number(row.paid) || 0,
+              progress,
+              techStack:   String(row.techStack || "").trim(),
+              description: String(row.description || "").trim(),
+              tags,
+              pending:     Math.max(0, (Number(row.budget) || 0) - (Number(row.paid) || 0)),
+            });
+          });
+
+          if (imported.length === 0) {
+            toast(`No valid rows found${skipped.length ? ` (${skipped.length} skipped — missing name)` : ""}`, "error");
+            setImporting(false);
+            return;
+          }
+
+          const updated = [...imported, ...projects];
+          setProjects(updated);
+          saveWorkspaceData("projects", updated, currentWorkspaceId);
+          addAudit("Projects", "Import", `Imported ${imported.length} projects from Excel`);
+          toast(`Imported ${imported.length} project${imported.length !== 1 ? "s" : ""}${skipped.length ? ` · ${skipped.length} row${skipped.length !== 1 ? "s" : ""} skipped` : ""}`);
+        } catch (err) {
+          console.error(err);
+          toast("Import failed — make sure you're using the correct template", "error");
+        }
+        setImporting(false);
+      };
+      reader.readAsArrayBuffer(file);
+    }).catch(() => {
+      toast("Could not load Excel parser. Check your connection.", "error");
+      setImporting(false);
+    });
+  }, [projects, currentWorkspaceId, addAudit]);
 
   const stats = useMemo(() => {
     const totalBudget = projects.reduce((sum, p) => sum + (Number(p.budget) || 0), 0);
@@ -399,18 +586,28 @@ export default function ProjectsTab({
     const roadmapC  = tally(roadmapItems);
     const documentC = tally(documents);
 
+    // Also count roadmap items linked via linkedProjectId or via project's linkedRoadmapItemIds
+    const roadmapByLinkedProjectId = {};
+    (roadmapItems || []).forEach(r => {
+      if (r.linkedProjectId) roadmapByLinkedProjectId[r.linkedProjectId] = (roadmapByLinkedProjectId[r.linkedProjectId] || 0) + 1;
+    });
+
     const result = {};
     projects.forEach(p => {
+      const explicitRoadmapCount = Array.isArray(p.linkedRoadmapItemIds) ? p.linkedRoadmapItemIds.length : 0;
+      const implicitRoadmapCount = (roadmapC[p.id] || 0) + (roadmapByLinkedProjectId[p.id] || 0);
       result[p.id] = {
         tasks:     taskC[p.id]     || 0,
         invoices:  invoiceC[p.id]  || 0,
         notes:     noteC[p.id]     || 0,
-        roadmap:   roadmapC[p.id]  || 0,
+        roadmap:   Math.max(explicitRoadmapCount, implicitRoadmapCount),
         documents: documentC[p.id] || 0,
       };
     });
     return result;
   }, [projects, tasks, invoices, notes, roadmapItems, documents]);
+
+  const closeDetail = useCallback(() => setViewing(null), []);
 
   const detailProps = {
     tasks, notes, invoices, payments, proposals, documents,
@@ -436,8 +633,91 @@ export default function ProjectsTab({
               {stats.overdueProjects > 0 && <span style={{ color: "#ef4444", fontWeight: 600 }}> · {stats.overdueProjects} overdue</span>}
             </p>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+            {/* Sort */}
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value)}
+              style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}
+            >
+              <option value="createdAt">Newest</option>
+              <option value="name">Name</option>
+              <option value="deadline">Deadline</option>
+              <option value="budget">Budget</option>
+              <option value="progress">Progress</option>
+              <option value="priority">Priority</option>
+            </select>
+            {/* Grid / List toggle */}
+            {!isMobile && (
+              <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
+                {["grid", "list"].map(m => (
+                  <button key={m} onClick={() => setViewMode(m)} style={{
+                    fontSize: 13, padding: "3px 9px", border: "none", cursor: "pointer",
+                    background: viewMode === m ? "var(--accent)" : "transparent",
+                    color: viewMode === m ? "#fff" : "var(--text-muted)",
+                  }}>{m === "grid" ? "⊞" : "☰"}</button>
+                ))}
+              </div>
+            )}
             <button style={btnStyle("ghost", "sm")} onClick={handleExport}>↓ Export</button>
+            {/* Import dropdown */}
+            <div style={{ position: "relative" }} ref={importMenuRef}>
+              <button
+                style={btnStyle("ghost", "sm")}
+                onClick={() => setImportMenuOpen(o => !o)}
+                disabled={importing}
+              >
+                {importing ? "Importing…" : "⬆ Import ▾"}
+              </button>
+              {importMenuOpen && (
+                <div style={{
+                  position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 500,
+                  background: "var(--surface-raised)", border: "1px solid var(--border)",
+                  borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                  minWidth: 210, overflow: "hidden",
+                }}>
+                  <div style={{ padding: "8px 12px 6px", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px" }}>
+                    Excel Import
+                  </div>
+                  <button
+                    style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 14px", border: "none", background: "transparent", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "var(--accent-dim)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                    onClick={handleDownloadTemplate}
+                  >
+                    <span style={{ fontSize: 16 }}>📥</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 12 }}>Download Template</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Get the .xlsx import template</div>
+                    </div>
+                  </button>
+                  <div style={{ height: 1, background: "var(--border)", margin: "0 10px" }} />
+                  <button
+                    style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 14px", border: "none", background: "transparent", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "var(--accent-dim)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                    onClick={() => { importFileRef.current?.click(); }}
+                  >
+                    <span style={{ fontSize: 16 }}>📤</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 12 }}>Import from Excel</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Upload a filled .xlsx file</div>
+                    </div>
+                  </button>
+                  <div style={{ padding: "6px 14px 10px", fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                    Use the template above, fill it in,<br />then upload it here.
+                  </div>
+                </div>
+              )}
+            </div>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: "none" }}
+              onChange={handleImportFile}
+            />
+            <button style={btnStyle("primary", "sm")} onClick={() => { setEditing(null); setShowAdd(true); }}>+ New Project</button>
           </div>
         </div>
 
@@ -511,7 +791,11 @@ export default function ProjectsTab({
         ) : (
           <div style={{
             display: "grid",
-            gridTemplateColumns: viewing ? "1fr" : `repeat(auto-fill, minmax(${isMobile ? "100%" : "280px"}, 1fr))`,
+            gridTemplateColumns: viewing
+              ? "1fr"
+              : viewMode === "list" || isMobile
+                ? "1fr"
+                : `repeat(auto-fill, minmax(280px, 1fr))`,
             gap: 10, marginTop: 14,
           }}>
             {filtered.map(project => (
@@ -520,8 +804,10 @@ export default function ProjectsTab({
                 project={project}
                 linkedCounts={linkedCounts[project.id]}
                 isSelected={viewing?.id === project.id}
+                viewMode={viewMode}
                 onEdit={() => { setEditing(project); setShowAdd(true); }}
                 onDelete={() => setConfirmDelete(project)}
+                onDuplicate={() => handleDuplicate(project)}
                 onView={() => setViewing(p => p?.id === project.id ? null : project)}
               />
             ))}
@@ -572,7 +858,7 @@ export default function ProjectsTab({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          zIndex: 200,
+          zIndex: 9999,
           lineHeight: 1,
         }}
         title="Add Project"
@@ -581,7 +867,7 @@ export default function ProjectsTab({
       {/* Modals */}
       {showAdd && (
         <Modal title={editing ? "Edit Project" : "New Project"} onClose={() => { setShowAdd(false); setEditing(null); }} width={520}>
-          <ProjectForm initial={editing} onSave={handleSave} onClose={() => { setShowAdd(false); setEditing(null); }} />
+          <ProjectForm initial={editing} onSave={handleSave} onClose={() => { setShowAdd(false); setEditing(null); }} roadmapItems={roadmapItems || []} />
         </Modal>
       )}
 

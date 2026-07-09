@@ -1,0 +1,85 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+    
+    "presence": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    
+    "workspacePresence": {
+      "$workspaceId": {
+        "$uid": {
+          ".read": "auth != null && auth.uid == $uid",
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
+    
+    "workspaceLive": {
+      "$workspaceId": {
+        ".read": "root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('active').val() == true",
+        
+        "sessions": {
+          "$uid": {
+            ".read": "auth != null && auth.uid == $uid",
+            ".write": "auth != null && auth.uid == $uid"
+          }
+        },
+        
+        "notifications": {
+          ".read": "root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('active').val() == true",
+          "$notificationId": {
+            ".write": "root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('active').val() == true"
+          }
+        },
+        
+        "locks": {
+          "$moduleKey": {
+            "$recordId": {
+              ".read": "root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('active').val() == true",
+              ".write": "root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('active').val() == true"
+            }
+          }
+        },
+        
+        "editing": {
+          "$moduleKey": {
+            "$recordId": {
+              ".read": "root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('active').val() == true",
+              "$uid": {
+                ".write": "auth != null && auth.uid == $uid"
+              }
+            }
+          }
+        },
+        
+        "activity": {
+          ".read": "root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('active').val() == true",
+          "$activityId": {
+            ".write": "root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('active').val() == true"
+          }
+        },
+        
+        "syncStatus": {
+          "$uid": {
+            ".read": "auth != null && auth.uid == $uid",
+            ".write": "auth != null && auth.uid == $uid"
+          }
+        }
+      }
+    },
+    
+    "workspaceMembersMirror": {
+      "$workspaceId": {
+        "$uid": {
+          ".read": "auth != null && auth.uid == $uid || root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('role').val() == 'Owner' || root.child('workspaceMembersMirror').child($workspaceId).child(auth.uid).child('role').val() == 'Admin'",
+          ".write": "false"
+        }
+      }
+    }
+  }
+}

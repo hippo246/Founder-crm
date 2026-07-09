@@ -1,0 +1,62 @@
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getWorkspace(workspaceId) {
+      return get(/databases/(default)/documents/workspaces/$(workspaceId)).data;
+    }
+    
+    function isOwner(workspaceId) {
+      let workspace = getWorkspace(workspaceId);
+      return isAuthenticated() && workspace.ownerId == request.auth.uid;
+    }
+    
+    function isAdmin(workspaceId) {
+      let workspace = getWorkspace(workspaceId);
+      return isAuthenticated() && request.auth.uid in workspace.adminIds;
+    }
+    
+    function isStaff(workspaceId) {
+      let workspace = getWorkspace(workspaceId);
+      return isAuthenticated() && request.auth.uid in workspace.staffIds;
+    }
+    
+    function isViewer(workspaceId) {
+      let workspace = getWorkspace(workspaceId);
+      return isAuthenticated() && request.auth.uid in workspace.viewerIds;
+    }
+    
+    function hasWorkspaceAccess(workspaceId) {
+      let workspace = getWorkspace(workspaceId);
+      return isAuthenticated() && 
+             (workspace.ownerId == request.auth.uid ||
+              request.auth.uid in workspace.adminIds ||
+              request.auth.uid in workspace.staffIds ||
+              request.auth.uid in workspace.viewerIds);
+    }
+    
+    function canWrite(workspaceId) {
+      return isOwner(workspaceId) || isAdmin(workspaceId) || isStaff(workspaceId);
+    }
+    
+    function canDelete(workspaceId) {
+      return isOwner(workspaceId) || isAdmin(workspaceId);
+    }
+    
+    // Workspace files structure: /workspaces/{workspaceId}/{module}/{fileId}
+    match /workspaces/{workspaceId}/{allPaths=**} {
+      allow read: if hasWorkspaceAccess(workspaceId);
+      allow create: if canWrite(workspaceId);
+      allow update: if canWrite(workspaceId);
+      allow delete: if canDelete(workspaceId);
+    }
+    
+    // Default deny for all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

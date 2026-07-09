@@ -290,7 +290,10 @@ export async function registerPasskey() {
           name: user.email,
           displayName: user.ownerName || user.email
         },
-        pubKeyCredParams: [{ type: 'public-key', alg: -7 }], // ES256
+        pubKeyCredParams: [
+              { type: "public-key", alg: -7 }, // ES256 (recommended)
+              { type: "public-key", alg: -257 } // RS256 (fallback)
+            ],
         authenticatorSelection: {
           authenticatorAttachment: 'platform',
           userVerification: 'preferred'
