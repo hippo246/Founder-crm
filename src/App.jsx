@@ -14,6 +14,7 @@ import { initSessionLock, unlockSession } from "./lib/sessionLock.js";
 import { restoreSession, logout, saveActiveTab, getActiveTab, getCurrentUser } from "./lib/auth.js";
 import { defaultSettings } from "./config/crmConfig.js";
 import { hydrateFromFirestore, subscribeToCollection } from "./lib/sync.js";
+import SharePage from "./tabs/SharePage.jsx";
 
 
 // ─── Tab components ───────────────────────────────────────────────────────────
@@ -47,6 +48,9 @@ export default function App() {
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState(() => loadCurrentWorkspaceId());
   
   const currentWorkspace = workspaces.find(w => w.id === currentWorkspaceId) || workspaces[0];
+
+  // ── Login workspace pre-selection ────────────────────────────────────────────
+  const [loginWorkspaceId, setLoginWorkspaceId] = useState(() => loadCurrentWorkspaceId() || workspaces[0]?.id || null);
 
   // ── Set global date format from workspace ─────────────────────────────────────
   useEffect(() => {
@@ -401,8 +405,24 @@ export default function App() {
     whatsappTemplates, emailTemplates, promptHistory, projectLogs, roadmapItems, tags, customFields,
   };
 
+  // ── Public share route — no auth required ────────────────────────────────
+  if (window.location.hash.startsWith("#/share/")) {
+    return <SharePage />;
+  }
+
   if (!isAuthenticated) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return (
+      <LoginScreen
+        onLogin={handleLogin}
+        workspaces={workspaces}
+        selectedWorkspaceId={loginWorkspaceId}
+        onWorkspaceSelect={(id) => {
+          setLoginWorkspaceId(id);
+          setCurrentWorkspaceId(id);
+          saveCurrentWorkspaceId(id);
+        }}
+      />
+    );
   }
 
   return (
@@ -599,6 +619,7 @@ export default function App() {
               communications={communications} setCommunications={setCommunications}
               documents={documents} setDocuments={setDocuments}
               calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents}
+              setTab={setTab}
               workspaceId={currentWorkspaceId} onLinkedSave={handleLinkedRecordSave} />
           )}
           {tab === "payments" && (

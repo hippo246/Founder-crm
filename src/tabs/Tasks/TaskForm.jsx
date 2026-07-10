@@ -3,7 +3,12 @@ import { FormField, inputStyle, btnStyle, toast } from "../../components/ui/UI.j
 import { genId } from "../../lib/helpers.js";
 import { TASK_STATUSES, TASK_PRIORITIES } from "../../config/crmConfig.js";
 
-export default function TaskForm({ initial = {}, onSave, onClose, projects = [], roadmapItems = [], supportTickets = [], contacts = [] }) {
+export default function TaskForm({ initial, onSave, onClose, projects, roadmapItems, supportTickets, contacts }) {
+  initial = initial ?? {};
+  projects = projects ?? [];
+  roadmapItems = roadmapItems ?? [];
+  supportTickets = supportTickets ?? [];
+  contacts = contacts ?? [];
   const [f, setF] = useState({
     title: "", description: "", project: "", contact: "", status: "Todo", priority: "Medium",
     dueDate: "", startDate: "", estimatedHours: "", actualHours: "",
@@ -16,7 +21,11 @@ export default function TaskForm({ initial = {}, onSave, onClose, projects = [],
   const [newItem, setNewItem] = useState("");
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
   const addCI = () => { if (!newItem.trim()) return; setF(p => ({ ...p, checklist: [...(p.checklist || []), { id: genId(), text: newItem.trim(), done: false }] })); setNewItem(""); };
-  const toggleCI = id => setF(p => ({ ...p, checklist: p.checklist.map(c => c.id === id ? { ...c, done: !c.done } : c) }));
+  const toggleCI = id => setF(p => {
+    const checklist = p.checklist.map(c => c.id === id ? { ...c, done: !c.done } : c);
+    const allDone = checklist.length > 0 && checklist.every(c => c.done);
+    return { ...p, checklist, progress: allDone ? 100 : p.progress };
+  });
   const removeCI = id => setF(p => ({ ...p, checklist: p.checklist.filter(c => c.id !== id) }));
 
   const categories = ["Development", "Design", "Marketing", "Sales", "Support", "Operations", "Research", "Other"];
@@ -86,7 +95,7 @@ export default function TaskForm({ initial = {}, onSave, onClose, projects = [],
         <FormField label="Full Description"><textarea style={{ ...inputStyle, minHeight: 90, resize: "vertical" }} value={f.description} onChange={set("description")} placeholder="Comprehensive task details, acceptance criteria, or specifications..." /></FormField>
         <FormField label="Blockers / Impediments"><input style={{ ...inputStyle, borderColor: f.blockers ? "var(--warning)" : "var(--border)" }} value={f.blockers} onChange={set("blockers")} placeholder="Is anything preventing this task from moving forward?" /></FormField>
         
-        <FormField label="Task Checklist (Subtasks)">
+        <FormField label={`Task Checklist (Subtasks)${f.checklist?.length ? ` — ${f.checklist.filter(c => c.done).length}/${f.checklist.length} done` : ""}`}>
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
             <input style={{ ...inputStyle, flex: 1 }} value={newItem} onChange={e => setNewItem(e.target.value)} placeholder="Add a subtask…" onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addCI())} />
             <button style={btnStyle("ghost", "sm")} onClick={addCI}>+ Add</button>
@@ -106,7 +115,11 @@ export default function TaskForm({ initial = {}, onSave, onClose, projects = [],
 
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
         <button style={{ ...btnStyle("ghost"), padding: "10px 20px" }} onClick={onClose}>Cancel</button>
-        <button style={{ ...btnStyle("primary"), padding: "10px 24px", fontSize: 14 }} onClick={() => { if (!f.title.trim()) { toast("Title is required", "error"); return; } onSave(f); }}>
+        <button style={{ ...btnStyle("primary"), padding: "10px 24px", fontSize: 14 }} onClick={() => {
+  if (!f.title.trim()) { toast("Title is required", "error"); return; }
+  if (f.startDate && f.dueDate && f.startDate > f.dueDate) { toast("Start date must be before due date", "error"); return; }
+  onSave({ ...f, title: f.title.trim(), assignee: f.assignee.trim(), blockers: f.blockers.trim(), description: f.description.trim() });
+}}>
           {initial.id ? "Update Task" : "Create Task"}
         </button>
       </div>

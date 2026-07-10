@@ -18,7 +18,11 @@ function getSeverity(action) {
   return "Info";
 }
 
-export const createAuditEntry = (role, module, action, desc, before = null, after = null, extra = {}) => ({
+function getSessionId() {
+  try { return JSON.parse(localStorage.getItem("auth_session") || "{}").currentUserId || ""; } catch { return ""; }
+}
+
+export const createAuditEntry = (role, module, action, desc, before = null, after = null, extra = {}, sessionId = "") => ({
   id: genId(),
   workspaceId: extra.workspaceId || "",
   ts: new Date().toISOString(),
@@ -37,12 +41,13 @@ export const createAuditEntry = (role, module, action, desc, before = null, afte
   relatedType: extra.relatedType || "",
   relatedId: extra.relatedId || "",
   severity: extra.severity || getSeverity(action),
-  sessionId: (() => { try { return JSON.parse(localStorage.getItem("auth_session") || "{}").currentUserId || ""; } catch { return ""; } })(),
+  sessionId,
 });
 
 // makeAddAudit returns the addAudit callback for use in App
 export const makeAddAudit = (role, setAudit, workspaceId = "workspace-1") => (module, action, desc, before = null, after = null, extra = {}) => {
-  const entry = createAuditEntry(role, module, action, desc, before, after, { ...extra, workspaceId });
+  const sessionId = getSessionId();
+  const entry = createAuditEntry(role, module, action, desc, before, after, { ...extra, workspaceId }, sessionId);
   setAudit(prev => {
     const updated = [entry, ...prev].slice(0, 1000);
     saveWorkspaceData("audit", updated, workspaceId);

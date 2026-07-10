@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { loginWithPassword, loginWithPasskey, userExists, createLocalUser, checkPasswordStrength, isPasskeySupported } from "../../lib/auth.js";
+import { loginWithPassword, loginWithPasskey, isPasskeySupported } from "../../lib/auth.js";
 
 const GRADIENT = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
 
@@ -16,31 +16,19 @@ const field = {
   transition: "border-color 0.15s",
 };
 
-export default function LoginScreen({ onLogin }) {
+export default function LoginScreen({ onLogin, workspaces = [], selectedWorkspaceId = null, onWorkspaceSelect }) {
   const [email, setEmail]           = useState("");
   const [password, setPassword]     = useState("");
-  const [ownerName, setOwnerName]   = useState("");
   const [isLoading, setIsLoading]   = useState(false);
   const [usePasskey, setUsePasskey] = useState(false);
   const [error, setError]           = useState("");
   const [showPw, setShowPw]         = useState(false);
   const [focusedField, setFocusedField] = useState(null);
-  const [isFirstTime, setIsFirstTime] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
   const [passkeySupported, setPasskeySupported] = useState(false);
   const [passkeyEnabled, setPasskeyEnabled] = useState(false);
 
   useEffect(() => {
-    const firstTime = !userExists();
-    setIsFirstTime(firstTime);
     setPasskeySupported(isPasskeySupported());
-    
-    // Auto-switch to sign-up mode for first-time users
-    if (firstTime) {
-      setIsSignUp(true);
-    }
-    
-    // Check if passkey is enabled for existing user
     const userStr = localStorage.getItem('auth_user');
     if (userStr) {
       try {
@@ -57,40 +45,17 @@ export default function LoginScreen({ onLogin }) {
     if (isLoading) return;
     setIsLoading(true);
     setError("");
-
     try {
-      if (isSignUp) {
-        // Sign up flow
-        if (!email || !password || !ownerName) {
-          setError("All fields are required");
-          setIsLoading(false);
-          return;
-        }
-
-        const strength = checkPasswordStrength(password);
-        if (strength.strength === 'weak') {
-          setError(strength.message);
-          setIsLoading(false);
-          return;
-        }
-
-        const user = await createLocalUser(email, password, ownerName);
-        onLogin({ email: user.email, method: "password", user });
-      } else {
-        // Login flow
-        if (!email || !password) {
-          setError("Email and password are required");
-          setIsLoading(false);
-          return;
-        }
-
-        const user = await loginWithPassword(email, password);
-        onLogin({ email: user.email, method: "password", user });
+      if (!email || !password) {
+        setError("Email and password are required");
+        setIsLoading(false);
+        return;
       }
+      const user = await loginWithPassword(email, password);
+      onLogin({ email: user.email, method: "password", user });
     } catch (err) {
       setError(err.message || "Login failed");
     }
-
     setIsLoading(false);
   };
 
@@ -151,12 +116,46 @@ export default function LoginScreen({ onLogin }) {
             boxShadow: "0 8px 24px rgba(102,126,234,0.35)",
           }}>🔐</div>
           <h1 style={{ margin: "0 0 clamp(4px, 1vw, 6px)", fontSize: "clamp(18px, 5vw, 28px)", fontWeight: 800, background: GRADIENT, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-            {isSignUp ? "Create Account" : "Welcome Back"}
+            Welcome Back
           </h1>
           <p style={{ margin: 0, fontSize: "clamp(12px, 3vw, 13px)", color: "#64748b" }}>
-            {isSignUp ? "Set up your workspace" : "Sign in to your workspace"}
+            Sign in to your workspace
           </p>
         </div>
+
+        {/* Workspace switcher */}
+        {workspaces.length > 1 && (
+          <div style={{ marginBottom: "clamp(14px, 3vw, 18px)" }}>
+            <label style={{ display: "block", fontSize: "clamp(12px, 3vw, 13px)", fontWeight: 600, color: "#334155", marginBottom: "clamp(4px, 1vw, 6px)" }}>
+              Workspace
+            </label>
+            <select
+              value={selectedWorkspaceId || ""}
+              onChange={e => onWorkspaceSelect && onWorkspaceSelect(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "11px 14px",
+                fontSize: 14,
+                borderRadius: 10,
+                border: "1.5px solid #e2e8f0",
+                outline: "none",
+                background: "#f8fafc",
+                color: "#1e293b",
+                boxSizing: "border-box",
+                cursor: "pointer",
+                appearance: "none",
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "right 14px center",
+                paddingRight: 36,
+              }}
+            >
+              {workspaces.map(w => (
+                <option key={w.id} value={w.id}>{w.icon ? `${w.icon} ${w.name}` : w.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Error banner */}
         {error && (
@@ -167,25 +166,6 @@ export default function LoginScreen({ onLogin }) {
 
         {!usePasskey ? (
           <form onSubmit={handlePasswordLogin} noValidate>
-            {/* Owner Name (sign up only) */}
-            {isSignUp && (
-              <div style={{ marginBottom: "clamp(12px, 3vw, 16px)" }}>
-                <label htmlFor="owner-name" style={{ display: "block", fontSize: "clamp(12px, 3vw, 13px)", fontWeight: 600, color: "#334155", marginBottom: "clamp(4px, 1vw, 6px)" }}>Your Name</label>
-                <input
-                  id="owner-name"
-                  style={{ ...field, borderColor: focusedField === "owner" ? "#667eea" : "#e2e8f0", boxShadow: focusedField === "owner" ? "0 0 0 3px rgba(102,126,234,0.15)" : "none" }}
-                  type="text"
-                  placeholder="John Doe"
-                  value={ownerName}
-                  onChange={e => setOwnerName(e.target.value)}
-                  onFocus={() => setFocusedField("owner")}
-                  onBlur={() => setFocusedField(null)}
-                  required
-                  autoFocus
-                />
-              </div>
-            )}
-
             {/* Email */}
             <div style={{ marginBottom: "clamp(12px, 3vw, 16px)" }}>
               <label htmlFor="login-email" style={{ display: "block", fontSize: "clamp(12px, 3vw, 13px)", fontWeight: 600, color: "#334155", marginBottom: "clamp(4px, 1vw, 6px)" }}>Email</label>
@@ -199,7 +179,7 @@ export default function LoginScreen({ onLogin }) {
                 onFocus={() => setFocusedField("email")}
                 onBlur={() => setFocusedField(null)}
                 required
-                autoFocus={!isSignUp}
+                autoFocus
                 autoComplete="email"
               />
             </div>
@@ -212,13 +192,13 @@ export default function LoginScreen({ onLogin }) {
                   id="login-password"
                   style={{ ...field, borderColor: focusedField === "pw" ? "#667eea" : "#e2e8f0", boxShadow: focusedField === "pw" ? "0 0 0 3px rgba(102,126,234,0.15)" : "none", paddingRight: 44 }}
                   type={showPw ? "text" : "password"}
-                  placeholder={isSignUp ? "Create a strong password" : "••••••••"}
+                  placeholder="••••••••"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   onFocus={() => setFocusedField("pw")}
                   onBlur={() => setFocusedField(null)}
                   required
-                  autoComplete={isSignUp ? "new-password" : "current-password"}
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
@@ -227,12 +207,7 @@ export default function LoginScreen({ onLogin }) {
                   style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "clamp(16px, 4vw, 17px)", color: "#94a3b8", padding: 4, lineHeight: 1 }}
                 >{showPw ? "🙈" : "👁️"}</button>
               </div>
-              {isSignUp && password && (
-                <div style={{ fontSize: "clamp(10px, 2.5vw, 11px)", color: "#64748b", marginTop: 4 }}>
-                  {checkPasswordStrength(password).message}
-                </div>
-              )}
-            </div>
+          </div>
 
             {/* Remember + forgot */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "clamp(18px, 4vw, 22px)", fontSize: "clamp(12px, 3vw, 13px)", flexWrap: "wrap", gap: 8 }}>
@@ -260,20 +235,8 @@ export default function LoginScreen({ onLogin }) {
                 opacity: isLoading ? 0.8 : 1,
               }}
             >
-              {isLoading ? (isSignUp ? "Creating account…" : "Signing in…") : (isSignUp ? "Create Account" : "Sign In")}
+              {isLoading ? "Signing in…" : "Sign In"}
             </button>
-
-            {!isFirstTime && (
-              <div style={{ textAlign: "center", marginTop: "clamp(10px, 2.5vw, 12px)" }}>
-                <button
-                  type="button"
-                  onClick={() => { setIsSignUp(!isSignUp); setError(""); }}
-                  style={{ background: "none", border: "none", color: "#667eea", fontSize: "clamp(12px, 3vw, 13px)", cursor: "pointer", fontWeight: 500 }}
-                >
-                  {isSignUp ? "Already have an account? Sign in" : "First time? Create account"}
-                </button>
-              </div>
-            )}
           </form>
         ) : (
           <div style={{ textAlign: "center", padding: "clamp(20px, 5vw, 28px) 0" }}>
@@ -319,7 +282,7 @@ export default function LoginScreen({ onLogin }) {
         )}
 
         {/* Divider */}
-        {passkeySupported && !isSignUp && (
+        {passkeySupported && (
           <div style={{ display: "flex", alignItems: "center", margin: "clamp(16px, 4vw, 20px) 0", gap: 12 }}>
             <div style={{ flex: 1, height: 1, background: "#e2e8f0" }} />
             <span style={{ fontSize: "clamp(10px, 2.5vw, 11px)", color: "#94a3b8", fontWeight: 600, letterSpacing: "0.05em" }}>OR</span>
@@ -327,7 +290,7 @@ export default function LoginScreen({ onLogin }) {
           </div>
         )}
 
-        {passkeySupported && !isSignUp && (
+        {passkeySupported && (
           <button
             onClick={() => { setUsePasskey(p => !p); setError(""); }}
             disabled={isLoading || !passkeyEnabled}

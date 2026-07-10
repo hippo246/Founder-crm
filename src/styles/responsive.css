@@ -144,7 +144,7 @@
   }
 
   /* ── Bottom nav spacing ──────────────────────────────────────────────── */
-  .mobile-nav-bar { display: flex; }
+  /* .mobile-nav-bar display:flex is set in the component block below */
 }
 
 /* ── Small mobile (≤480px) ──────────────────────────────────────────────── */
@@ -235,6 +235,9 @@
   input[type="number"],
   input[type="date"],
   input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="password"],
   textarea {
     font-size: 16px !important; /* prevents iOS zoom on focus */
   }

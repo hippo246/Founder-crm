@@ -8,19 +8,29 @@ export async function generateSalt() {
   return Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Hash password with salt using SHA-256
+// Hash password with salt using PBKDF2 (100k iterations, SHA-256)
 export async function hashPassword(password, salt) {
   const encoder = new TextEncoder();
-  const data = encoder.encode(password + salt);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: encoder.encode(salt), iterations: 100_000, hash: 'SHA-256' },
+    keyMaterial, 256
+  );
+  return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Verify password against stored hash
+// Verify password against stored hash (timing-safe via PBKDF2 equality)
 export async function verifyPassword(password, salt, storedHash) {
   const computedHash = await hashPassword(password, salt);
-  return computedHash === storedHash;
+  // Constant-time comparison to prevent timing attacks
+  if (computedHash.length !== storedHash.length) return false;
+  let diff = 0;
+  for (let i = 0; i < computedHash.length; i++) {
+    diff |= computedHash.charCodeAt(i) ^ storedHash.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 // Create a new local user
@@ -278,9 +288,11 @@ export async function registerPasskey() {
     const userId = new TextEncoder().encode(user.userId);
     
     // Create credential
+    const registerChallenge = new Uint8Array(32);
+    crypto.getRandomValues(registerChallenge);
     const credential = await navigator.credentials.create({
       publicKey: {
-        challenge: new Uint8Array(32),
+        challenge: registerChallenge,
         rp: {
           name: 'Founder CRM',
           id: window.location.hostname
@@ -337,9 +349,11 @@ export async function loginWithPasskey() {
   try {
     const userId = new TextEncoder().encode(user.userId);
     
+    const loginChallenge = new Uint8Array(32);
+    crypto.getRandomValues(loginChallenge);
     const credential = await navigator.credentials.get({
       publicKey: {
-        challenge: new Uint8Array(32),
+        challenge: loginChallenge,
         rpId: window.location.hostname,
         allowCredentials: [{
           id: base64ToArrayBuffer(user.passkeyCredentialId),
@@ -392,9 +406,12 @@ export async function removePasskey() {
   return { success: true };
 }
 
-// Helper: Convert base64 to ArrayBuffer
+// Helper: Convert base64url or standard base64 to ArrayBuffer
 function base64ToArrayBuffer(base64) {
-  const binaryString = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+  // Normalize base64url → base64, then restore padding
+  const b64 = base64.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = b64 + '='.repeat((4 - b64.length % 4) % 4);
+  const binaryString = atob(padded);
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i);

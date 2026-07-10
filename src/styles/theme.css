@@ -9,7 +9,7 @@
   --surface: rgba(15, 23, 42, 0.5);
   --surface-raised: rgba(30, 41, 59, 0.6);
   --surface-overlay: rgba(15, 23, 42, 0.7);
-  --sidebar-bg: rgba(2, 6, 23, 0.6);
+  --sidebar-bg: rgba(2, 6, 23, 0.6); /* alias: use --glass-bg for sidebar; kept for direct sidebar overrides */
   
   /* ── Glassmorphism ────────────────────────────────────────────────────── */
   --glass-blur: blur(24px);
@@ -123,6 +123,15 @@
   --nav-active-bg: rgba(79, 70, 229, 0.1);
   --nav-active-border: #4f46e5;
   --nav-hover-bg: rgba(0,0,0,0.03);
-  
+
+  /* Semantic dims — light-mode values (dark fallbacks are too opaque on white) */
+  --accent-dim: rgba(79, 70, 229, 0.1);
+  --accent-border: rgba(79, 70, 229, 0.3);
+  --success-dim: rgba(16, 185, 129, 0.1);
+  --warning-dim: rgba(245, 158, 11, 0.1);
+  --danger-dim: rgba(239, 68, 68, 0.1);
+  --info-dim: rgba(56, 189, 248, 0.1);
+  --purple-dim: rgba(139, 92, 246, 0.1);
+
   --bg: var(--bg-color);
 }

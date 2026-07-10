@@ -37,7 +37,7 @@ function LinkedSection({ title, icon, items, emptyMsg, renderItem, onNavigate, n
 }
 
 // ── Full project detail panel ─────────────────────────────────────────────────
-function ProjectDetail({ project, tasks, notes, invoices, payments, proposals, documents, leads, communications, followUps, roadmapItems, supportTickets, projectLogs, onEdit, onDelete, onClose, setTab }) {
+function ProjectDetail({ project, tasks, notes, invoices, payments, proposals, documents, leads, communications, followUps, roadmapItems, supportTickets, projectLogs, contacts, onEdit, onDelete, onClose, setTab }) {
   const pid = project.id;
   const name = project.name;
   const budget = Number(project.budget) || 0;
@@ -99,6 +99,20 @@ function ProjectDetail({ project, tasks, notes, invoices, payments, proposals, d
             </div>
             {project.client && <div style={{ fontSize: 13, color: "var(--text-muted)" }}>👤 {project.client}</div>}
             {project.industry && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>🏢 {project.industry}</div>}
+            {project.contactId && (() => {
+              const c = (contacts || []).find(x => x.id === project.contactId);
+              if (!c) return null;
+              return (
+                <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12, display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  {c.email && <span style={{ color: "var(--text-muted)" }}>✉️ {c.email}</span>}
+                  {c.phone && <span style={{ color: "var(--text-muted)" }}>📞 {c.phone}</span>}
+                  {c.city && <span style={{ color: "var(--text-muted)" }}>📍 {c.city}</span>}
+                  {(c.tags || []).map(t => (
+                    <span key={t} style={{ fontSize: 10, padding: "1px 7px", borderRadius: 10, background: "var(--accent-dim)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}>{t}</span>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
             <button style={btnStyle("ghost", "sm")} onClick={onEdit}>Edit</button>
@@ -612,6 +626,7 @@ export default function ProjectsTab({
   const detailProps = {
     tasks, notes, invoices, payments, proposals, documents,
     leads, communications, followUps, roadmapItems, supportTickets, projectLogs,
+    contacts,
     setTab, onClose: closeDetail,
   };
 
@@ -867,7 +882,7 @@ export default function ProjectsTab({
       {/* Modals */}
       {showAdd && (
         <Modal title={editing ? "Edit Project" : "New Project"} onClose={() => { setShowAdd(false); setEditing(null); }} width={520}>
-          <ProjectForm initial={editing} onSave={handleSave} onClose={() => { setShowAdd(false); setEditing(null); }} roadmapItems={roadmapItems || []} />
+          <ProjectForm initial={editing} onSave={handleSave} onClose={() => { setShowAdd(false); setEditing(null); }} roadmapItems={roadmapItems || []} contacts={contacts || []} />
         </Modal>
       )}
 

@@ -14,16 +14,43 @@ export default function ProposalsTab({ proposals, setProposals, addAudit, role, 
 
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
+  const [filterProject, setFilterProject] = useState("All");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [confirm, setConfirm] = useState(null);
 
+  const allProjectNames = useMemo(() => ["All", ...new Set((proposals||[]).map(p=>p.projectName).filter(Boolean))], [proposals]);
+
   const filtered = useMemo(() => (proposals||[]).filter(p => {
     const q = search.toLowerCase();
     return (!q || p.title?.toLowerCase().includes(q) || p.client?.toLowerCase().includes(q) || p.service?.toLowerCase().includes(q))
-      && (filterStatus==="All" || p.status===filterStatus);
-  }), [proposals, search, filterStatus]);
+      && (filterStatus==="All" || p.status===filterStatus)
+      && (filterProject==="All" || p.projectName===filterProject);
+  }), [proposals, search, filterStatus, filterProject]);
+
+  const activeFilterCount = [search, filterStatus!=="All", filterProject!=="All"].filter(Boolean).length;
+  const resetFilters = () => { setSearch(""); setFilterStatus("All"); setFilterProject("All"); };
+
+  const statusCounts = useMemo(() => PROPOSAL_STATUSES.reduce((a,s)=>({...a,[s]:(proposals||[]).filter(p=>p.status===s).length}),{}), [proposals]);
+
+  const stats = useMemo(() => {
+    const all = proposals||[];
+    const pipeline = all.filter(p=>!["Rejected"].includes(p.status)).reduce((s,p)=>s+Number(p.price||0),0);
+    const accepted = all.filter(p=>p.status==="Accepted").reduce((s,p)=>s+Number(p.price||0),0);
+    const sent = all.filter(p=>["Sent","Accepted","Rejected"].includes(p.status)).length;
+    const winRate = sent ? Math.round((all.filter(p=>p.status==="Accepted").length/sent)*100) : 0;
+    return { pipeline, accepted, winRate };
+  }, [proposals]);
+
+  const validityInfo = (p) => {
+    if (!p.validityDate) return null;
+    const days = Math.ceil((new Date(p.validityDate) - Date.now()) / 86400000);
+    if (days < 0) return { label:`Expired ${Math.abs(days)}d ago`, color:"var(--danger)", bg:"var(--danger-dim)" };
+    if (days === 0) return { label:"Expires today", color:"var(--warning)", bg:"var(--warning-dim)" };
+    if (days <= 7) return { label:`Expires in ${days}d`, color:"var(--warning)", bg:"var(--warning-dim)" };
+    return { label:`Valid ${days}d`, color:"var(--text-muted)", bg:"var(--surface-raised)" };
+  };
 
   const ProposalForm = ({ initial={}, onSave, onClose }) => {
     const [f, setF] = useState({ 
@@ -190,21 +217,44 @@ export default function ProposalsTab({ proposals, setProposals, addAudit, role, 
       {confirm && <Confirm msg="Delete this proposal?" onYes={() => del(confirm)} onNo={() => setConfirm(null)} />}
       {(showForm||editing) && <Modal data-testid="proposal-modal" title={editing?"Edit proposal":"New proposal"} onClose={() => { setShowForm(false); setEditing(null); }} width={660}><ProposalForm initial={editing||{}} onSave={save} onClose={() => { setShowForm(false); setEditing(null); }} /></Modal>}
       {viewing && (
-        <Modal title="Proposal Preview" onClose={() => setViewing(null)} width={660}>
-          <div style={{ lineHeight: 1.7 }}>
-            <div style={{ fontSize:20, fontWeight:700, color:"var(--text)", marginBottom:4 }}>{viewing.title}</div>
-            <div style={{ fontSize:13, color:"var(--text-muted)", marginBottom:16 }}>For: {viewing.client} · {fmtDate(viewing.date)} · <Badge label={viewing.status} /></div>
-            <div style={{ background:"var(--surface)", borderRadius:10, padding:16, marginBottom:14 }}>
-              <div style={{ fontWeight:600, fontSize:13, marginBottom:6, color:"var(--text)" }}>Service: {viewing.service}</div>
-              <div style={{ fontWeight:600, fontSize:13, marginBottom:4, color:"var(--text-muted)" }}>Scope</div>
-              <p style={{ fontSize:13, color:"var(--text)", margin:"0 0 12px" }}>{viewing.scope}</p>
-              <div style={{ fontWeight:600, fontSize:13, marginBottom:4, color:"var(--text-muted)" }}>Deliverables</div>
-              <p style={{ fontSize:13, color:"var(--text)", margin:"0 0 12px" }}>{viewing.deliverables}</p>
-              <div style={{ fontWeight:600, fontSize:13, marginBottom:4, color:"var(--text-muted)" }}>Timeline</div>
-              <p style={{ fontSize:13, color:"var(--text)", margin:"0 0 12px" }}>{viewing.timeline}</p>
-              <div style={{ fontWeight:700, fontSize:16, color:"var(--success)", marginBottom:8 }}>Investment: ₹{Number(viewing.price||0).toLocaleString("en-IN")}</div>
-              <div style={{ fontWeight:600, fontSize:13, marginBottom:4, color:"var(--text-muted)" }}>Terms</div>
-              <p style={{ fontSize:13, color:"var(--text)", margin:0 }}>{viewing.terms}</p>
+        <Modal title="Proposal Preview" onClose={() => setViewing(null)} width={700}>
+          <div style={{ maxHeight:"78vh", overflowY:"auto", paddingRight:8, lineHeight:1.7 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div>
+                <div style={{ fontSize:20, fontWeight:700, color:"var(--text)", marginBottom:2 }}>{viewing.title}</div>
+                <div style={{ fontSize:13, color:"var(--text-muted)" }}>
+                  {viewing.proposalNumber && <span style={{ fontWeight:600, marginRight:10 }}>{viewing.proposalNumber}</span>}
+                  {viewing.client} · {fmtDate(viewing.date)}
+                  {viewing.validityDate && <span style={{ marginLeft:8 }}>· Valid until {fmtDate(viewing.validityDate)}</span>}
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:6 }}>
+                <Badge label={viewing.status} />
+                <button style={{ ...btnStyle("ghost","sm"), backgroundColor:"#F0F9FF", color:"#0369A1", border:"1px solid #BAE6FD" }} onClick={() => printProposal(viewing)}>🖨️ Print</button>
+              </div>
+            </div>
+
+            {[
+              { label:"Service", value:viewing.service },
+              { label:"Project", value:viewing.projectName },
+              { label:"Scope of Work", value:viewing.scope },
+              { label:"Deliverables", value:viewing.deliverables },
+              { label:"Timeline", value:viewing.timeline },
+              { label:"Milestones", value:viewing.milestones },
+              { label:"Price Breakdown", value:viewing.priceBreakdown },
+              { label:"Assumptions", value:viewing.assumptions },
+              { label:"Exclusions", value:viewing.exclusions },
+              { label:"Terms & Conditions", value:viewing.terms },
+            ].filter(row => row.value).map(({ label, value }) => (
+              <div key={label} style={{ marginBottom:14 }}>
+                <div style={{ fontWeight:600, fontSize:11, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:4 }}>{label}</div>
+                <div style={{ fontSize:13, color:"var(--text)", padding:"8px 12px", background:"var(--surface-raised)", borderRadius:6, whiteSpace:"pre-wrap" }}>{value}</div>
+              </div>
+            ))}
+
+            <div style={{ background:"var(--success-dim)", border:"1px solid var(--success)", borderRadius:8, padding:"12px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8 }}>
+              <span style={{ fontWeight:700, fontSize:15, color:"var(--success)" }}>Total Investment</span>
+              <span style={{ fontWeight:800, fontSize:22, color:"var(--success)" }}>₹{Number(viewing.price||0).toLocaleString("en-IN")}</span>
             </div>
           </div>
         </Modal>
@@ -216,49 +266,88 @@ export default function ProposalsTab({ proposals, setProposals, addAudit, role, 
           {role !== "Viewer" && <button data-testid="proposal-create" style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ New proposal</button>}
         </div>
       </div>
+
+      {(proposals||[]).length > 0 && (
+        <>
+          <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+            {[
+              { label:"Pipeline", value:`₹${stats.pipeline>=100000?(stats.pipeline/100000).toFixed(1)+"L":stats.pipeline.toLocaleString("en-IN")}`, color:"var(--accent)" },
+              { label:"Accepted", value:`₹${stats.accepted>=100000?(stats.accepted/100000).toFixed(1)+"L":stats.accepted.toLocaleString("en-IN")}`, color:"var(--success)" },
+              { label:"Win rate", value:`${stats.winRate}%`, color:stats.winRate>=50?"var(--success)":"var(--warning)" },
+            ].map(({label,value,color})=>(
+              <div key={label} style={{ padding:"8px 16px", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--r-md)", minWidth:110 }}>
+                <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:2 }}>{label}</div>
+                <div style={{ fontSize:18, fontWeight:800, color }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))", gap:8, marginBottom:16 }}>
+            {PROPOSAL_STATUSES.map(s=>(
+              <div key={s} onClick={()=>setFilterStatus(filterStatus===s?"All":s)}
+                style={{ background:"var(--surface)", border:`1px solid ${filterStatus===s?"var(--accent)":"var(--border)"}`, borderRadius:"var(--r-md)", padding:"8px 10px", cursor:"pointer", userSelect:"none" }}>
+                <div style={{ fontSize:9, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:4 }}>{s}</div>
+                <div style={{ fontSize:18, fontWeight:800, color:s==="Accepted"?"var(--success)":s==="Rejected"?"var(--danger)":"var(--text)" }}>{statusCounts[s]||0}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:18 }}>
         <SearchInput value={search} onChange={setSearch} placeholder="Search proposals…" />
         <select style={{ ...inputStyle, width:"auto" }} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}><option value="All">All statuses</option>{PROPOSAL_STATUSES.map(s=><option key={s}>{s}</option>)}</select>
+        {allProjectNames.length > 1 && <select style={{ ...inputStyle, width:"auto" }} value={filterProject} onChange={e=>setFilterProject(e.target.value)}>{allProjectNames.map(p=><option key={p}>{p==="All"?"All projects":p}</option>)}</select>}
+        {activeFilterCount > 0 && (
+          <button style={btnStyle("ghost","sm")} onClick={resetFilters}>
+            Reset <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:16, height:16, borderRadius:"50%", background:"var(--accent)", color:"#fff", fontSize:10, fontWeight:700, marginLeft:4 }}>{activeFilterCount}</span>
+          </button>
+        )}
       </div>
       {filtered.length===0 ? <EmptyState icon="📋" title="No proposals" sub="Start building your first proposal." action={<button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ New proposal</button>} /> : (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-          {filtered.map(p => (
+          {filtered.map(p => {
+            const vi = validityInfo(p);
+            return (
             <div key={p.id} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, padding:"14px 16px", display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, flexWrap:"wrap" }}>
               <div style={{ flex:1, minWidth:200 }}>
-                <div style={{ fontWeight:600, fontSize:14, color:"var(--text)", marginBottom:4 }}>{p.title}</div>
-                <div style={{ fontSize:12, color:"var(--text-muted)", marginBottom:4 }}>{p.client} · {p.service} · {fmtDate(p.date)}</div>
-                <div style={{ fontSize:13, color:"var(--success)", fontWeight:600 }}>₹{Number(p.price||0).toLocaleString("en-IN")}</div>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4, flexWrap:"wrap" }}>
+                  <span style={{ fontWeight:600, fontSize:14, color:"var(--text)", cursor:"pointer" }} onClick={() => setViewing(p)}>{p.title}</span>
+                  {p.proposalNumber && <span style={{ fontSize:11, color:"var(--text-muted)", fontWeight:500 }}>{p.proposalNumber}</span>}
+                  {vi && <span style={{ fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:"var(--r-pill)", background:vi.bg, color:vi.color }}>{vi.label}</span>}
+                </div>
+                <div style={{ fontSize:12, color:"var(--text-muted)", marginBottom:4 }}>{p.client}{p.service&&` · ${p.service}`}{p.projectName&&` · 📁 ${p.projectName}`} · {fmtDate(p.date)}</div>
+                <div style={{ fontSize:13, color:"var(--success)", fontWeight:700 }}>₹{Number(p.price||0).toLocaleString("en-IN")}</div>
               </div>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-                      <Badge label={p.status} />
-                      <button data-testid="proposal-preview" style={btnStyle("soft","sm")} onClick={() => setViewing(p)}>Preview</button>
-                      <button
-                        data-testid="proposal-print"
-                        style={{ ...btnStyle("ghost","sm"), backgroundColor:"#F0F9FF", color:"#0369A1", border:"1px solid #BAE6FD" }}
-                        onClick={() => printProposal(p)}
-                        title="Print Proposal"
-                      >
-                        🖨️ Print
-                      </button>
-                      {role !== "Viewer" && <>
-                        {p.status!=="Accepted"&&<button data-testid="proposal-accept" style={{ ...btnStyle("ghost","sm"), color:"var(--success)" }} onClick={() => markStatus(p.id,"Accepted")}>Accept</button>}
-                        {p.status!=="Rejected"&&<button data-testid="proposal-reject" style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => markStatus(p.id,"Rejected")}>Reject</button>}
-                        {p.status==="Accepted"&&<>
-                          <button data-testid="proposal-to-project" style={{ ...btnStyle("ghost","sm"), color:"var(--accent)" }} onClick={() => convertToProject(p)}>→ Project</button>
-                          <button data-testid="proposal-to-invoice" style={{ ...btnStyle("ghost","sm"), color:"var(--text)" }} onClick={() => createInvoiceFromProposal(p)}>→ Invoice</button>
-                        </>}
-                        <button data-testid="proposal-duplicate" style={btnStyle("ghost","sm")} onClick={() => duplicate(p)}>Duplicate</button>
-                        <button data-testid="proposal-edit" style={btnStyle("ghost","sm")} onClick={() => setEditing(p)}>Edit</button>
-                        {(role==="Owner"||role==="Admin")&&<button data-testid="proposal-delete" style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => setConfirm(p.id)}>Del</button>}
-                        {onLinkedSave && role !== "Viewer" && <>
-                          <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("note",{title:`Note — ${p.title}`,relatedTo:p.title,relatedType:"Proposal",contactId:p.contactId,body:"",tags:[]})}>📝 Note</button>
-                          <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("communication",{contact:p.clientName||p.client,relatedTo:p.title,method:"Email",date:new Date().toISOString().slice(0,10),summary:""})}>💬 Comm</button>
-                          <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("followUp",{person:p.clientName||p.client,relatedTo:p.title,relatedType:"Proposal",type:"Call",dueDate:new Date(Date.now()+2*86400000).toISOString().slice(0,10),status:"Pending",notes:""})}>📞 Follow-Up</button>
-                        </>}
-                      </>}
+              <div style={{ display:"flex", flexDirection:"column", gap:6, alignItems:"flex-end" }}>
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center", justifyContent:"flex-end" }}>
+                  <Badge label={p.status} />
+                  <button data-testid="proposal-preview" style={btnStyle("soft","sm")} onClick={() => setViewing(p)}>Preview</button>
+                  <button data-testid="proposal-print" style={{ ...btnStyle("ghost","sm"), backgroundColor:"#F0F9FF", color:"#0369A1", border:"1px solid #BAE6FD" }} onClick={() => printProposal(p)}>🖨️ Print</button>
+                </div>
+                {role !== "Viewer" && (
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"flex-end" }}>
+                    {p.status!=="Accepted"&&<button data-testid="proposal-accept" style={{ ...btnStyle("ghost","sm"), color:"var(--success)" }} onClick={() => markStatus(p.id,"Accepted")}>✓ Accept</button>}
+                    {p.status!=="Rejected"&&<button data-testid="proposal-reject" style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => markStatus(p.id,"Rejected")}>✗ Reject</button>}
+                    {p.status==="Accepted"&&<>
+                      <button data-testid="proposal-to-project" style={{ ...btnStyle("ghost","sm"), color:"var(--accent)" }} onClick={() => convertToProject(p)}>→ Project</button>
+                      <button data-testid="proposal-to-invoice" style={btnStyle("ghost","sm")} onClick={() => createInvoiceFromProposal(p)}>→ Invoice</button>
+                    </>}
+                    <button data-testid="proposal-duplicate" style={btnStyle("ghost","sm")} onClick={() => duplicate(p)}>Duplicate</button>
+                    <button data-testid="proposal-edit" style={btnStyle("ghost","sm")} onClick={() => setEditing(p)}>Edit</button>
+                    {(role==="Owner"||role==="Admin")&&<button data-testid="proposal-delete" style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={() => setConfirm(p.id)}>Delete</button>}
+                  </div>
+                )}
+                {onLinkedSave && role !== "Viewer" && (
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"flex-end" }}>
+                    <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("note",{title:`Note — ${p.title}`,relatedTo:p.title,relatedType:"Proposal",contactId:p.contactId,body:"",tags:[]})}>📝 Note</button>
+                    <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("communication",{contact:p.clientName||p.client,relatedTo:p.title,method:"Email",date:new Date().toISOString().slice(0,10),summary:""})}>💬 Comm</button>
+                    <button style={btnStyle("ghost","sm")} onClick={() => onLinkedSave("followUp",{person:p.clientName||p.client,relatedTo:p.title,relatedType:"Proposal",type:"Call",dueDate:new Date(Date.now()+2*86400000).toISOString().slice(0,10),status:"Pending",notes:""})}>📞 Follow-up</button>
+                  </div>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -58,16 +58,50 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [viewingPrompt, setViewingPrompt] = useState(null);
+  const [expandedBodies, setExpandedBodies] = useState(new Set());
+  const [filterTag, setFilterTag] = useState("");
+  const [sortBy, setSortBy] = useState("number"); // number | date | quality | status
+  const [sortDir, setSortDir] = useState("asc");
+  const [allExpanded, setAllExpanded] = useState(false);
+  const toggleBody = (id) => setExpandedBodies(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const qualityStars = (n) => { const v = Number(n); if (!v) return null; return <span title={`${v}/5`}>{[1,2,3,4,5].map(i=><span key={i} style={{color: i<=v?"var(--warning)":"var(--border)", fontSize:12}}>★</span>)}</span>; };
 
   const allProjects = useMemo(()=>["All",...new Set(prompts.map(p=>p.project).filter(Boolean))],[prompts]);
 
-  const filtered = useMemo(()=>[...prompts].sort((a,b)=>Number(a.promptNumber)-Number(b.promptNumber)).filter(p=>{
-    const q=search.toLowerCase();
-    return (!q||p.title?.toLowerCase().includes(q)||p.promptBody?.toLowerCase().includes(q)||p.outputSummary?.toLowerCase().includes(q))
-      &&(filterStatus==="All"||p.status===filterStatus)
-      &&(filterTool==="All"||p.tool===filterTool)
-      &&(filterProject==="All"||p.project===filterProject);
-  }),[prompts,search,filterStatus,filterTool,filterProject]);
+  const allTags = useMemo(() => [...new Set(prompts.flatMap(p => p.tags||[]))].sort(), [prompts]);
+
+  const filtered = useMemo(()=>{
+    const arr = [...prompts].filter(p=>{
+      const q=search.toLowerCase();
+      return (!q||p.title?.toLowerCase().includes(q)||p.promptBody?.toLowerCase().includes(q)||p.outputSummary?.toLowerCase().includes(q))
+        &&(filterStatus==="All"||p.status===filterStatus)
+        &&(filterTool==="All"||p.tool===filterTool)
+        &&(filterProject==="All"||p.project===filterProject)
+        &&(!filterTag||(p.tags||[]).includes(filterTag));
+    });
+    arr.sort((a,b) => {
+      let av, bv;
+      if (sortBy==="number")  { av=Number(a.promptNumber); bv=Number(b.promptNumber); }
+      else if (sortBy==="date")    { av=new Date(a.date); bv=new Date(b.date); }
+      else if (sortBy==="quality") { av=Number(a.resultQuality||0); bv=Number(b.resultQuality||0); }
+      else if (sortBy==="status")  { av=a.status||""; bv=b.status||""; }
+      else { av=0; bv=0; }
+      if (av<bv) return sortDir==="asc"?-1:1;
+      if (av>bv) return sortDir==="asc"?1:-1;
+      return 0;
+    });
+    return arr;
+  },[prompts,search,filterStatus,filterTool,filterProject,filterTag,sortBy,sortDir]);
+
+  const stats = useMemo(()=>{
+    const withQ = prompts.filter(p=>Number(p.resultQuality)>0);
+    const avgQ = withQ.length ? (withQ.reduce((s,p)=>s+Number(p.resultQuality),0)/withQ.length).toFixed(1) : "—";
+    const totalChars = prompts.reduce((s,p)=>s+(p.promptBody?.length||0),0);
+    const appliedRate = prompts.length ? Math.round((prompts.filter(p=>p.status==="Applied").length/prompts.length)*100) : 0;
+    return { avgQ, totalChars, appliedRate };
+  }, [prompts]);
 
   const save = useCallback(f => {
     if(editing){ const u=prompts.map(p=>p.id===editing.id?{...editing,...f}:p); setPromptHistory(u); saveWorkspaceData("promptHistory", u, workspaceId); addAudit("Prompts","Update",`Updated: ${f.title}`); toast("Updated"); }
@@ -112,6 +146,9 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
 
   const statusCounts = useMemo(() => PROMPT_STATUSES.reduce((a,s)=>({...a,[s]:prompts.filter(p=>p.status===s).length}),{}), [prompts]);
 
+  const activeFilterCount = [search, filterStatus !== "All", filterTool !== "All", filterProject !== "All", filterTag].filter(Boolean).length;
+  const resetFilters = () => { setSearch(""); setFilterStatus("All"); setFilterTool("All"); setFilterProject("All"); setFilterTag(""); };
+
   const handleExport = useCallback(() => { exportToCSV("prompt-history", filtered); toast("Prompt history exported to CSV"); }, [filtered]);
 
   const onDragEnd = useCallback((result) => {
@@ -126,6 +163,8 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
   const renderPromptCard = useCallback((p, index) => {
     const rmItem = p.linkedRoadmapItemId && (roadmapItems||[]).find(r=>r.id===p.linkedRoadmapItemId);
     const linkedTask = p.linkedTaskId && (tasks||[]).find(t=>t.id===p.linkedTaskId);
+    const isExpanded = allExpanded || expandedBodies.has(p.id);
+    const nextLinked = p.nextPromptNeeded && filtered.find(x => x.title?.toLowerCase() === p.nextPromptNeeded?.toLowerCase() && x.id !== p.id);
     const content = (
       <div key={p.id} style={{
         background: "var(--surface)",
@@ -141,19 +180,19 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
       onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)"; }}>
         
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:10}}>
-          <div>
-            <div style={{fontWeight:700,fontSize:15,color:"var(--text)", letterSpacing:"-0.2px", marginBottom: 6}}>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:15,color:"var(--text)", letterSpacing:"-0.2px", marginBottom: 6, cursor:"pointer"}} onClick={() => setViewingPrompt(p)}>
               <span style={{color:"var(--text-muted)",marginRight:6, fontWeight:500}}>#{p.promptNumber}</span>{p.title}
             </div>
-            <div style={{fontSize:12,color:"var(--text-muted)",display:"flex", gap:8, flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:"var(--text-muted)",display:"flex", gap:8, flexWrap:"wrap", alignItems:"center"}}>
               <span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>🤖 {p.tool}</span>
               <span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>📁 {p.project||"—"}</span>
               <span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>📄 {p.moduleFile}</span>
               <span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>📅 {fmtDate(p.date)}</span>
-              {p.resultQuality>0&&<span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>⭐ {p.resultQuality}/5</span>}
+              {p.resultQuality > 0 && <span style={{background:"var(--surface-raised)", padding:"2px 8px", borderRadius:"12px"}}>{qualityStars(p.resultQuality)}</span>}
             </div>
           </div>
-          <div style={{display:"flex",gap:6, background:"var(--surface-raised)", padding:"6px", borderRadius:"8px", border:"1px solid var(--border)"}}>
+          <div style={{display:"flex",gap:6, background:"var(--surface-raised)", padding:"6px", borderRadius:"8px", border:"1px solid var(--border)", flexShrink:0}}>
             <Badge label={p.status} size="sm" />
           </div>
         </div>
@@ -163,39 +202,44 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
           {linkedTask&&<span>✅ {linkedTask.title}</span>}
         </div>}
         
-        {p.promptBody&&<div style={{
-          background: "#1e1e1e",
-          border: "1px solid var(--border)",
-          borderRadius: "8px",
-          padding: "12px",
-          fontSize: 12,
-          color: "#d4d4d4",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-          marginBottom: 12,
-          maxHeight: 120,
-          overflowY: "auto",
-          lineHeight: 1.5,
-          position: "relative"
-        }}>
-          <div style={{position:"absolute", top:8, right:8, opacity:0.6, fontSize:10, userSelect:"none"}}>PROMPT</div>
-          <pre style={{margin:0, whiteSpace:"pre-wrap", fontFamily:"inherit"}}>{p.promptBody}</pre>
-        </div>}
+        {p.promptBody&&(
+          <div style={{marginBottom:12}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
+              <span style={{fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px"}}>Prompt · {p.promptBody.length} chars</span>
+              <button style={{...btnStyle("ghost","sm"), padding:"1px 8px", fontSize:10}} onClick={()=>toggleBody(p.id)}>{isExpanded ? "Collapse ▲" : "Expand ▼"}</button>
+            </div>
+            <div style={{
+              background: "#1e1e1e", border: "1px solid var(--border)", borderRadius: "8px", padding: "12px",
+              fontSize: 12, color: "#d4d4d4", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              maxHeight: isExpanded ? 400 : 72, overflowY: "auto", lineHeight: 1.5, transition: "max-height 0.2s ease", position:"relative"
+            }}>
+              {!isExpanded && <div style={{position:"absolute", bottom:0, left:0, right:0, height:28, background:"linear-gradient(transparent, #1e1e1e)", borderRadius:"0 0 8px 8px", pointerEvents:"none"}} />}
+              <pre style={{margin:0, whiteSpace:"pre-wrap", fontFamily:"inherit"}}>{p.promptBody}</pre>
+            </div>
+          </div>
+        )}
         
         {p.outputSummary&&<div style={{fontSize:13,color:"var(--text)",marginBottom:8, padding:"8px 12px", background:"var(--background)", borderRadius:"6px", borderLeft:"2px solid var(--accent)"}}>
           <strong>Output:</strong> {p.outputSummary}
         </div>}
+
+        {p.notes&&<div style={{fontSize:12,color:"var(--text-muted)",marginBottom:8, padding:"6px 10px", background:"var(--surface-raised)", borderRadius:"6px", fontStyle:"italic"}}>
+          💬 {p.notes}
+        </div>}
         
-        {p.nextPromptNeeded&&<div style={{fontSize:12,color:"var(--accent)",marginBottom:10, fontWeight: 600}}>
-          → Next: {p.nextPromptNeeded}
+        {p.nextPromptNeeded&&<div style={{fontSize:12,color:"var(--accent)",marginBottom:10, fontWeight:600, display:"flex", alignItems:"center", gap:6}}>
+          → Next: {nextLinked
+            ? <span style={{cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted"}} onClick={()=>setViewingPrompt(nextLinked)}>#{nextLinked.promptNumber} {p.nextPromptNeeded}</span>
+            : p.nextPromptNeeded}
         </div>}
         
         {p.tags?.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-          {p.tags.map(tag=><span key={tag} style={{fontSize:11,padding:"2px 10px",borderRadius:"12px",background:"var(--accent-dim)",color:"var(--accent)",border:"1px solid var(--accent-border)", fontWeight:500}}>#{tag}</span>)}
+          {p.tags.map(tag=><span key={tag} onClick={()=>setFilterTag(filterTag===tag?"":tag)} style={{fontSize:11,padding:"2px 10px",borderRadius:"12px",background:filterTag===tag?"var(--accent)":"var(--accent-dim)",color:filterTag===tag?"#fff":"var(--accent)",border:"1px solid var(--accent-border)", fontWeight:500, cursor:"pointer", userSelect:"none"}}>#{tag}</span>)}
         </div>}
         
         {role!=="Viewer"&&(
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10, paddingTop: 10, borderTop: "1px dashed var(--border)"}}>
-            {p.promptBody&&<button style={btnStyle("soft","sm")} onClick={()=>copyPrompt(p.promptBody)}>📋 Copy Prompt</button>}
+            {p.promptBody&&<button style={btnStyle("soft","sm")} title="Copy prompt to clipboard" onClick={()=>copyPrompt(p.promptBody)}>📋 Copy</button>}
             {p.status!=="Applied"&&<button style={{...btnStyle("ghost","sm"),color:"var(--success)", background:"var(--success-dim)"}} onClick={()=>markStatus(p.id,"Applied")}>✓ Applied</button>}
             {p.status!=="Needs Fix"&&<button style={{...btnStyle("ghost","sm"),color:"var(--danger)", background:"var(--danger-dim)"}} onClick={()=>markStatus(p.id,"Needs Fix")}>Needs Fix</button>}
             <button style={btnStyle("ghost","sm")} onClick={()=>createTask(p)}>+ Task</button>
@@ -229,11 +273,62 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
     }
     
     return content;
-  }, [role, roadmapItems, tasks, copyPrompt, markStatus, createTask, duplicate, onLinkedSave]);
+  }, [role, roadmapItems, tasks, copyPrompt, markStatus, createTask, duplicate, onLinkedSave, expandedBodies, filtered, setViewingPrompt, toggleBody, qualityStars, filterTag]);
 
   return (
     <div>
       {confirm&&<Confirm msg={`Delete "${confirm.title}"? This cannot be undone.`} onYes={()=>del(confirm.id)} onNo={()=>setConfirm(null)} />}
+      {viewingPrompt&&(
+        <Modal title={<>#{viewingPrompt.promptNumber} — {viewingPrompt.title}</>} onClose={()=>setViewingPrompt(null)} width={720}>
+          <div style={{maxHeight:"75vh", overflowY:"auto", paddingRight:8}}>
+            <div style={{display:"flex", gap:8, alignItems:"center", marginBottom:16, flexWrap:"wrap"}}>
+              <Badge label={viewingPrompt.status} size="sm" />
+              {qualityStars(viewingPrompt.resultQuality)}
+              <span style={{fontSize:12, color:"var(--text-muted)"}}>🤖 {viewingPrompt.tool}</span>
+              <span style={{fontSize:12, color:"var(--text-muted)"}}>📁 {viewingPrompt.project||"—"}</span>
+              <span style={{fontSize:12, color:"var(--text-muted)"}}>📄 {viewingPrompt.moduleFile}</span>
+              <span style={{fontSize:12, color:"var(--text-muted)"}}>📅 {fmtDate(viewingPrompt.date)}</span>
+              <div style={{marginLeft:"auto", display:"flex", gap:6}}>
+                {viewingPrompt.promptBody && <button style={btnStyle("ghost","sm")} onClick={()=>copyPrompt(viewingPrompt.promptBody)}>📋 Copy Prompt</button>}
+                {role!=="Viewer" && <button style={btnStyle("ghost","sm")} onClick={()=>{setViewingPrompt(null);setEditing(viewingPrompt);}}>Edit</button>}
+              </div>
+            </div>
+            {viewingPrompt.promptBody&&(
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:11, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:6}}>Prompt Body · {viewingPrompt.promptBody.length} chars</div>
+                <div style={{background:"#1e1e1e", border:"1px solid var(--border)", borderRadius:8, padding:12, fontSize:12, color:"#d4d4d4", fontFamily:"ui-monospace,monospace", lineHeight:1.6, maxHeight:300, overflowY:"auto"}}>
+                  <pre style={{margin:0, whiteSpace:"pre-wrap", fontFamily:"inherit"}}>{viewingPrompt.promptBody}</pre>
+                </div>
+              </div>
+            )}
+            {viewingPrompt.outputSummary&&(
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:11, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:6}}>Output Summary</div>
+                <div style={{fontSize:13, color:"var(--text)", padding:"10px 14px", background:"var(--surface-raised)", borderRadius:6, borderLeft:"3px solid var(--accent)"}}>{viewingPrompt.outputSummary}</div>
+              </div>
+            )}
+            {viewingPrompt.nextPromptNeeded&&(
+              <div style={{marginBottom:16, padding:"8px 14px", background:"var(--accent-dim)", borderRadius:6, fontSize:13, color:"var(--accent)", fontWeight:600}}>
+                → Next prompt needed: {viewingPrompt.nextPromptNeeded}
+              </div>
+            )}
+            {viewingPrompt.notes&&(
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:11, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:6}}>Notes</div>
+                <div style={{fontSize:13, color:"var(--text)", padding:"8px 12px", background:"var(--surface-raised)", borderRadius:6, fontStyle:"italic"}}>{viewingPrompt.notes}</div>
+              </div>
+            )}
+            {viewingPrompt.tags?.length>0&&(
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:11, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:6}}>Tags</div>
+                <div style={{display:"flex", gap:6, flexWrap:"wrap"}}>
+                  {viewingPrompt.tags.map(t=><span key={t} style={{fontSize:11,padding:"2px 10px",borderRadius:"12px",background:"var(--accent-dim)",color:"var(--accent)",border:"1px solid var(--accent-border)",fontWeight:500}}>#{t}</span>)}
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
       {(showForm||editing)&&<Modal title={editing?"Edit prompt":"Add prompt"} onClose={()=>{setShowForm(false);setEditing(null);}} width={680}><PromptForm initial={editing||{}} onSave={save} onClose={()=>{setShowForm(false);setEditing(null);}} projects={projects||[]} tasks={tasks||[]} roadmapItems={roadmapItems||[]} projectLogs={projectLogs||[]} allPrompts={prompts} /></Modal>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}}>
@@ -247,6 +342,21 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
         </div>
       </div>
 
+      {prompts.length > 0 && (
+        <div style={{display:"flex", gap:10, marginBottom:16, flexWrap:"wrap"}}>
+          {[
+            { label:"Avg quality", value: stats.avgQ === "—" ? "—" : `${stats.avgQ} / 5`, color:"var(--warning)" },
+            { label:"Applied rate", value:`${stats.appliedRate}%`, color:"var(--success)" },
+            { label:"Total chars", value: stats.totalChars > 1000 ? `${(stats.totalChars/1000).toFixed(1)}k` : stats.totalChars, color:"var(--accent)" },
+          ].map(({label,value,color})=>(
+            <div key={label} style={{padding:"8px 16px", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--r-md)", minWidth:110}}>
+              <div style={{fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:2}}>{label}</div>
+              <div style={{fontSize:18, fontWeight:800, color}}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Status summary */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:8,marginBottom:16}}>
         {PROMPT_STATUSES.map(s=>(
@@ -257,10 +367,23 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
         ))}
       </div>
 
-      <div style={{display:"flex",gap:6,marginBottom:12}}>
-        <button style={btnStyle(viewMode==="kanban"?"primary":"ghost","sm")} onClick={()=>setViewMode("kanban")}>Kanban</button>
-        <button style={btnStyle(viewMode==="list"?"primary":"ghost","sm")} onClick={()=>setViewMode("list")}>List</button>
-        <button style={btnStyle(viewMode==="sequence"?"primary":"ghost","sm")} onClick={()=>setViewMode("sequence")}>By Project</button>
+      <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",gap:6}}>
+          <button style={btnStyle(viewMode==="kanban"?"primary":"ghost","sm")} onClick={()=>setViewMode("kanban")}>Kanban</button>
+          <button style={btnStyle(viewMode==="list"?"primary":"ghost","sm")} onClick={()=>setViewMode("list")}>List</button>
+          <button style={btnStyle(viewMode==="sequence"?"primary":"ghost","sm")} onClick={()=>setViewMode("sequence")}>By Project</button>
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <span style={{fontSize:11,color:"var(--text-muted)"}}>Sort:</span>
+          {[["number","#"],["date","Date"],["quality","Quality"],["status","Status"]].map(([val,label])=>(
+            <button key={val} style={btnStyle(sortBy===val?"primary":"ghost","sm")} onClick={()=>{ if(sortBy===val) setSortDir(d=>d==="asc"?"desc":"asc"); else {setSortBy(val);setSortDir("asc");} }}>
+              {label}{sortBy===val ? (sortDir==="asc"?" ↑":" ↓") : ""}
+            </button>
+          ))}
+          {viewMode!=="kanban" && (
+            <button style={btnStyle("ghost","sm")} onClick={()=>setAllExpanded(v=>!v)}>{allExpanded?"Collapse all ▲":"Expand all ▼"}</button>
+          )}
+        </div>
       </div>
 
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
@@ -268,7 +391,24 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
         <select style={{...inputStyle,width:"auto"}} value={filterProject} onChange={e=>setFilterProject(e.target.value)}>{allProjects.map(p=><option key={p} value={p}>{p==="All"?"All projects":p}</option>)}</select>
         <select style={{...inputStyle,width:"auto"}} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}><option value="All">All statuses</option>{PROMPT_STATUSES.map(s=><option key={s}>{s}</option>)}</select>
         <select style={{...inputStyle,width:"auto"}} value={filterTool} onChange={e=>setFilterTool(e.target.value)}><option value="All">All tools</option>{PROMPT_TOOLS.map(t=><option key={t}>{t}</option>)}</select>
+        {activeFilterCount > 0 && (
+          <button style={btnStyle("ghost","sm")} onClick={resetFilters}>
+            Reset <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:"50%",background:"var(--accent)",color:"#fff",fontSize:10,fontWeight:700,marginLeft:4}}>{activeFilterCount}</span>
+          </button>
+        )}
       </div>
+
+      {allTags.length > 0 && (
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
+          <span style={{fontSize:11,color:"var(--text-muted)",fontWeight:600}}>Tags:</span>
+          {allTags.map(tag=>(
+            <span key={tag} onClick={()=>setFilterTag(filterTag===tag?"":tag)}
+              style={{fontSize:11,padding:"2px 10px",borderRadius:"12px",background:filterTag===tag?"var(--accent)":"var(--surface-raised)",color:filterTag===tag?"#fff":"var(--text-muted)",border:`1px solid ${filterTag===tag?"var(--accent)":"var(--border)"}`,fontWeight:500,cursor:"pointer",userSelect:"none"}}>
+              #{tag}
+            </span>
+          ))}
+        </div>
+      )}
 
       {filtered.length===0?<EmptyState icon="🤖" title="No prompts" sub="Track every prompt you send to AI tools." action={<button style={btnStyle("primary")} onClick={()=>setShowForm(true)}>+ Add prompt</button>}/>:(
         viewMode==="kanban"?(
@@ -314,7 +454,42 @@ export default function PromptHistoryTab({ promptHistory, setPromptHistory, addA
             </div>
           ))
         ):(
-          <div>{filtered.map(p=>renderPromptCard(p))}</div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead>
+                <tr style={{background:"var(--surface)"}}>
+                  {["#","Title","Project","Tool","Status","Quality","Date",""].map(h=>(
+                    <th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:600,color:"var(--text-muted)",fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid var(--border)"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((p,i)=>(
+                  <tr key={p.id} style={{borderBottom:"1px solid var(--border)",background:i%2===0?"transparent":"var(--stripe)",cursor:"pointer"}}
+                    onClick={()=>setViewingPrompt(p)}
+                    onMouseEnter={e=>e.currentTarget.style.background="var(--accent-dim)"}
+                    onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"transparent":"var(--stripe)"}>
+                    <td style={{padding:"8px 12px",color:"var(--text-muted)",fontWeight:600}}>#{p.promptNumber}</td>
+                    <td style={{padding:"8px 12px",color:"var(--text)",fontWeight:500,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      <span style={{display:"inline-block",width:4,height:4,borderRadius:"50%",background:p.status==="Applied"?"var(--success)":p.status==="Needs Fix"?"var(--danger)":"var(--accent)",marginRight:8,verticalAlign:"middle"}}/>
+                      {p.title}
+                    </td>
+                    <td style={{padding:"8px 12px",color:"var(--text-muted)",whiteSpace:"nowrap"}}>{p.project||"—"}</td>
+                    <td style={{padding:"8px 12px",color:"var(--text-muted)",whiteSpace:"nowrap"}}>🤖 {p.tool}</td>
+                    <td style={{padding:"8px 12px"}}><Badge label={p.status} size="sm" /></td>
+                    <td style={{padding:"8px 12px"}}>{qualityStars(p.resultQuality)||<span style={{color:"var(--text-muted)"}}>—</span>}</td>
+                    <td style={{padding:"8px 12px",color:"var(--text-muted)",whiteSpace:"nowrap",fontSize:11}}>{fmtDate(p.date)}</td>
+                    <td style={{padding:"8px 12px"}} onClick={e=>e.stopPropagation()}>
+                      <div style={{display:"flex",gap:4}}>
+                        {p.promptBody&&<button style={btnStyle("ghost","sm")} onClick={()=>copyPrompt(p.promptBody)}>📋</button>}
+                        {role!=="Viewer"&&<button style={btnStyle("ghost","sm")} onClick={()=>setEditing(p)}>Edit</button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )
       )}
     </div>

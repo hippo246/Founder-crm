@@ -119,6 +119,41 @@ export function openPrintView(docType, data, context = {}) {
         .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
         .client-box { background: #f9fafb; padding: 20px; border-radius: 8px; border: 1px solid #e5e7eb; }
         @media print { body { padding: 20px; } }
+
+        /* ── Receipt-specific styles ── */
+        .rcpt-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 22px; border-bottom: 2px solid #111827; }
+        .rcpt-biz-name { font-size: 20px; font-weight: 700; color: #111827; margin-bottom: 6px; }
+        .rcpt-biz-details { display: flex; flex-direction: column; gap: 2px; color: #6b7280; font-size: 12px; }
+        .rcpt-title-block { text-align: right; }
+        .rcpt-doc-label { font-size: 22px; font-weight: 800; color: #111827; letter-spacing: 2px; margin-bottom: 10px; }
+        .rcpt-meta-table { border: none; margin: 0; width: auto; margin-left: auto; }
+        .rcpt-meta-table td { border: none; padding: 2px 0 2px 16px; font-size: 12px; }
+        .rcpt-meta-key { color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; text-align: right; padding-right: 8px !important; }
+        .rcpt-meta-val { font-weight: 600; color: #111827; font-family: monospace; text-align: left; }
+
+        .rcpt-amount-hero { background: #f0fdf4; border: 2px solid #86efac; border-radius: 10px; padding: 32px 24px; text-align: center; margin: 24px 0; position: relative; }
+        .rcpt-amount-label { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #16a34a; margin-bottom: 10px; }
+        .rcpt-amount-value { font-size: 52px; font-weight: 800; color: #15803d; line-height: 1; letter-spacing: -1px; }
+        .rcpt-paid-stamp { display: inline-block; margin-top: 14px; padding: 4px 14px; border: 2.5px solid #16a34a; border-radius: 4px; font-size: 12px; font-weight: 800; color: #16a34a; letter-spacing: 3px; transform: rotate(-2deg); }
+
+        .rcpt-details-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin: 24px 0; }
+        .rcpt-detail-cell { padding: 18px 20px; border-right: 1px solid #e5e7eb; }
+        .rcpt-detail-cell:last-child { border-right: none; }
+        .rcpt-detail-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; margin-bottom: 6px; }
+        .rcpt-detail-primary { font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 3px; }
+        .rcpt-detail-secondary { font-size: 12px; color: #6b7280; }
+
+        .rcpt-notes { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px 20px; margin: 20px 0; }
+        .rcpt-notes-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #92400e; margin-bottom: 6px; }
+        .rcpt-notes-body { font-size: 13px; color: #374151; line-height: 1.6; }
+
+        .rcpt-footer { margin-top: 36px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+        .rcpt-footer-line { font-size: 12px; color: #374151; margin-bottom: 4px; }
+        .rcpt-footer-meta { font-size: 11px; color: #9ca3af; }
+        @media print {
+          .rcpt-amount-hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .rcpt-details-grid { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
       </style>
     </head>
     <body>
@@ -130,9 +165,15 @@ export function openPrintView(docType, data, context = {}) {
   printWindow.document.close();
   printWindow.focus();
   
-  setTimeout(() => {
-    printWindow.print();
-  }, 500);
+  // Use onload to print only after all resources are ready,
+  // falling back to a timeout for browsers that don't fire onload on document.write
+  const triggerPrint = () => { try { printWindow.print(); } catch(e) {} };
+  if (printWindow.document.readyState === "complete") {
+    setTimeout(triggerPrint, 100);
+  } else {
+    printWindow.onload = triggerPrint;
+    setTimeout(triggerPrint, 1200); // fallback
+  }
 }
 
 // Generate professional invoice print HTML
@@ -267,75 +308,80 @@ function generateInvoicePrintHTML(invoice, context) {
 function generateReceiptPrintHTML(payment, context) {
   const currency = context.currency || "INR";
   const symbol = currency === "INR" ? "₹" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : currency === "AED" ? "AED " : "$";
-  
+
+  // Format date nicely: "15 Jan 2025" instead of raw ISO
+  const fmtReceiptDate = (d) => {
+    if (!d) return new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+    const parsed = new Date(d);
+    return isNaN(parsed) ? d : parsed.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+  };
+
+  const receiptNum = payment.receiptNumber || payment.paymentNumber || "—";
+  const amountFormatted = Number(payment.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Payment method icon mapping (text-safe)
+  const methodIcons = { UPI: "📱", Cash: "💵", "Bank Transfer": "🏦", Cheque: "📝", "Credit Card": "💳", "Debit Card": "💳", Crypto: "🔗" };
+  const methodIcon = methodIcons[payment.method] || "💰";
+
   return `
-    <div class="header">
-      <div>
-        <div class="business-info">${context.businessName || "Founder OS CRM"}</div>
-        <div class="business-details">
-          ${context.ownerName ? `<div>${context.ownerName}</div>` : ""}
-          ${context.ownerEmail ? `<div>${context.ownerEmail}</div>` : ""}
-          ${context.ownerPhone ? `<div>${context.ownerPhone}</div>` : ""}
+    <!-- RECEIPT HEADER -->
+    <div class="rcpt-header">
+      <div class="rcpt-biz">
+        <div class="rcpt-biz-name">${context.businessName || "Business"}</div>
+        <div class="rcpt-biz-details">
+          ${context.ownerName ? `<span>${context.ownerName}</span>` : ""}
+          ${context.ownerEmail ? `<span>${context.ownerEmail}</span>` : ""}
+          ${context.ownerPhone ? `<span>${context.ownerPhone}</span>` : ""}
         </div>
       </div>
-      <div class="meta">
-        <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:8px;">PAYMENT RECEIPT</div>
-        <div><span class="label">Receipt #:</span> <span class="value">${payment.paymentNumber || payment.receiptNumber || "—"}</span></div>
-        <div><span class="label">Date:</span> <span class="value">${payment.date || new Date().toISOString().slice(0,10)}</span></div>
+      <div class="rcpt-title-block">
+        <div class="rcpt-doc-label">PAYMENT RECEIPT</div>
+        <table class="rcpt-meta-table">
+          <tr><td class="rcpt-meta-key">Receipt #</td><td class="rcpt-meta-val">${receiptNum}</td></tr>
+          <tr><td class="rcpt-meta-key">Date</td><td class="rcpt-meta-val">${fmtReceiptDate(payment.date)}</td></tr>
+          ${payment.invoiceNumber ? `<tr><td class="rcpt-meta-key">Invoice</td><td class="rcpt-meta-val">${payment.invoiceNumber}</td></tr>` : ""}
+        </table>
       </div>
     </div>
 
-    <div class="two-col">
-      <div class="client-box">
-        <div class="section-title" style="font-size:14px;margin-bottom:10px;">Received From</div>
-        <div style="font-weight:600;font-size:15px;margin-bottom:5px;">${payment.clientName || "—"}</div>
-      </div>
-      <div>
-        <div class="section-title" style="font-size:14px;margin-bottom:10px;">Payment Method</div>
-        <div style="font-weight:600;font-size:15px;">${payment.method || "—"}</div>
-      </div>
+    <!-- AMOUNT HERO -->
+    <div class="rcpt-amount-hero">
+      <div class="rcpt-amount-label">AMOUNT RECEIVED</div>
+      <div class="rcpt-amount-value">${symbol}${amountFormatted}</div>
+      <div class="rcpt-paid-stamp">✓ PAID</div>
     </div>
 
-    <div class="section" style="text-align:center;padding:40px;background:#f9fafb;border-radius:8px;border:2px solid #e5e7eb;">
-      <div class="label" style="font-size:16px;margin-bottom:10px;">Amount Received</div>
-      <div style="font-size:48px;font-weight:700;color:#059669;">${symbol}${Number(payment.amount || 0).toFixed(2)}</div>
+    <!-- PARTIES + METHOD ROW -->
+    <div class="rcpt-details-grid">
+      <div class="rcpt-detail-cell">
+        <div class="rcpt-detail-label">RECEIVED FROM</div>
+        <div class="rcpt-detail-primary">${payment.clientName || payment.client || "—"}</div>
+        ${payment.projectName || payment.project ? `<div class="rcpt-detail-secondary">Project: ${payment.projectName || payment.project}</div>` : ""}
+      </div>
+      <div class="rcpt-detail-cell">
+        <div class="rcpt-detail-label">PAYMENT METHOD</div>
+        <div class="rcpt-detail-primary">${methodIcon} ${payment.method || "—"}</div>
+        ${payment.reference ? `<div class="rcpt-detail-secondary">Ref: ${payment.reference}</div>` : ""}
+      </div>
+      <div class="rcpt-detail-cell">
+        <div class="rcpt-detail-label">RECEIVED BY</div>
+        <div class="rcpt-detail-primary">${payment.receivedBy || context.ownerName || "—"}</div>
+        <div class="rcpt-detail-secondary">${fmtReceiptDate(payment.date)}</div>
+      </div>
     </div>
-
-    <div class="two-col">
-      <div>
-        <div class="section-title" style="font-size:14px;margin-bottom:10px;">Reference</div>
-        <div style="font-weight:600;font-size:15px;">${payment.reference || "—"}</div>
-      </div>
-      <div>
-        <div class="section-title" style="font-size:14px;margin-bottom:10px;">Received By</div>
-        <div style="font-weight:600;font-size:15px;">${payment.receivedBy || "—"}</div>
-      </div>
-    </div>
-
-    ${payment.invoiceId ? `
-      <div class="section">
-        <div class="section-title">Related Invoice</div>
-        <div style="font-weight:600;font-size:15px;">${payment.invoiceNumber || payment.invoiceId}</div>
-      </div>
-    ` : ""}
-
-    ${payment.projectId ? `
-      <div class="section">
-        <div class="section-title">Related Project</div>
-        <div style="font-weight:600;font-size:15px;">${payment.projectName || payment.projectId}</div>
-      </div>
-    ` : ""}
 
     ${payment.notes ? `
-      <div class="section">
-        <div class="section-title">Notes</div>
-        <div style="color:#374151;line-height:1.6;">${payment.notes}</div>
-      </div>
+    <!-- NOTES -->
+    <div class="rcpt-notes">
+      <div class="rcpt-notes-label">NOTES</div>
+      <div class="rcpt-notes-body">${payment.notes}</div>
+    </div>
     ` : ""}
 
-    <div class="footer">
-      This receipt serves as confirmation of payment received.
-      <div style="margin-top:8px;">Generated on ${new Date().toLocaleDateString()}</div>
+    <!-- FOOTER -->
+    <div class="rcpt-footer">
+      <div class="rcpt-footer-line">This document confirms receipt of payment. Please retain for your records.</div>
+      <div class="rcpt-footer-meta">${context.businessName || ""} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</div>
     </div>
   `;
 }

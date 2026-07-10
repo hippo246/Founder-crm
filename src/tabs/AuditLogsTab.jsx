@@ -23,6 +23,23 @@ export default function AuditLogsTab({ audit, setAudit, role, workspaceId = "wor
   const [filterDateTo, setFilterDateTo] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const [viewingEntry, setViewingEntry] = useState(null);
+  const [page, setPage] = useState(1);
+  const [hoveredRow, setHoveredRow] = useState(null);
+  const [sortCol, setSortCol] = useState("ts");
+  const [sortDir, setSortDir] = useState("desc");
+  const PAGE_SIZE = 50;
+
+  const relTime = (ts) => {
+    const diff = Date.now() - new Date(ts);
+    const m = Math.floor(diff / 60000);
+    if (m < 1)  return "just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    if (d < 7)  return `${d}d ago`;
+    return new Date(ts).toLocaleDateString("en-IN", { dateStyle: "short" });
+  };
 
   const modules  = useMemo(() => ["All", ...new Set((audit||[]).map(a=>a.module).filter(Boolean))], [audit]);
   const actions  = useMemo(() => ["All", ...new Set((audit||[]).map(a=>a.action).filter(Boolean))], [audit]);
@@ -41,6 +58,57 @@ export default function AuditLogsTab({ audit, setAudit, role, workspaceId = "wor
     return matchesSearch && matchesModule && matchesAction && matchesUser && matchesSeverity && matchesDateFrom && matchesDateTo;
   }), [audit, search, filterModule, filterAction, filterUser, filterSeverity, filterDateFrom, filterDateTo]);
 
+  const SEV_ORDER = { Critical: 0, Warning: 1, Info: 2 };
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      let av, bv;
+      if (sortCol === "ts")       { av = new Date(a.ts); bv = new Date(b.ts); }
+      else if (sortCol === "sev") { av = SEV_ORDER[a.severity||"Info"]; bv = SEV_ORDER[b.severity||"Info"]; }
+      else if (sortCol === "user"){ av = (a.userName||a.user||"").toLowerCase(); bv = (b.userName||b.user||"").toLowerCase(); }
+      else if (sortCol === "mod") { av = (a.module||"").toLowerCase(); bv = (b.module||"").toLowerCase(); }
+      else { av = 0; bv = 0; }
+      if (av < bv) return sortDir === "asc" ? -1 : 1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return arr;
+  }, [filtered, sortCol, sortDir]);
+
+  const toggleSort = (col) => { if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol(col); setSortDir("asc"); } setPage(1); };
+  const SortIcon = ({ col }) => sortCol !== col ? <span style={{ opacity:0.3, marginLeft:4 }}>⇅</span> : sortDir === "asc" ? <span style={{ marginLeft:4 }}>↑</span> : <span style={{ marginLeft:4 }}>↓</span>;
+
+  const activeFilterCount = [search, filterModule !== "All", filterAction !== "All", filterUser !== "All", filterSeverity !== "All", filterDateFrom, filterDateTo].filter(Boolean).length;
+
+  const resetFilters = () => { setSearch(""); setFilterModule("All"); setFilterAction("All"); setFilterUser("All"); setFilterSeverity("All"); setFilterDateFrom(""); setFilterDateTo(""); setPage(1); };
+
+  const severityCounts = useMemo(() => ({
+    Critical: (audit||[]).filter(a => a.severity === "Critical").length,
+    Warning:  (audit||[]).filter(a => a.severity === "Warning").length,
+    Info:     (audit||[]).filter(a => (a.severity || "Info") === "Info").length,
+  }), [audit]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const paginated  = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const viewingIndex = viewingEntry ? sorted.findIndex(a => a.id === viewingEntry.id) : -1;
+  const goEntry = (delta) => { const next = sorted[viewingIndex + delta]; if (next) setViewingEntry(next); };
+
+  // Keyboard: Esc closes modal, arrow keys navigate entries
+  useState(() => {
+    const handler = (e) => {
+      if (!viewingEntry) return;
+      if (e.key === "Escape") setViewingEntry(null);
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); goEntry(1); }
+      if (e.key === "ArrowLeft"  || e.key === "ArrowUp")   { e.preventDefault(); goEntry(-1); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [viewingEntry, viewingIndex]);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const setToday = () => { setFilterDateFrom(todayStr); setFilterDateTo(todayStr); setPage(1); };
+
   const clearLogs = () => { setAudit([]); saveWorkspaceData("audit",[],workspaceId); toast("Audit logs cleared","info"); setConfirmClear(false); };
   
   const handleExport = () => { exportToCSV("audit-logs", filtered); toast("Audit logs exported to CSV"); };
@@ -57,6 +125,14 @@ export default function AuditLogsTab({ audit, setAudit, role, workspaceId = "wor
       {viewingEntry && (
         <Modal title="Audit Entry Details" onClose={() => setViewingEntry(null)} width={640}>
           <div style={{ maxHeight: "70vh", overflowY: "auto", paddingRight: 8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <button style={btnStyle("ghost","sm")} disabled={viewingIndex <= 0} onClick={() => goEntry(-1)} title="Previous entry (←)">←</button>
+                <span style={{ fontSize:11, color:"var(--text-muted)", minWidth:60, textAlign:"center" }}>{viewingIndex + 1} / {sorted.length}</span>
+                <button style={btnStyle("ghost","sm")} disabled={viewingIndex >= sorted.length - 1} onClick={() => goEntry(1)} title="Next entry (→)">→</button>
+              </div>
+              <button style={btnStyle("ghost","sm")} onClick={() => { navigator.clipboard.writeText(JSON.stringify(viewingEntry, null, 2)); toast("Copied to clipboard","info"); }}>Copy JSON</button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
               <div><span style={{ fontSize: 11, color: "var(--text-muted)" }}>Time</span><div style={{ fontSize: 13, fontWeight: 500 }}>{new Date(viewingEntry.ts).toLocaleString()}</div></div>
               <div><span style={{ fontSize: 11, color: "var(--text-muted)" }}>User</span><div style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>{viewingEntry.userName || viewingEntry.user || "—"}</div></div>
@@ -112,34 +188,78 @@ export default function AuditLogsTab({ audit, setAudit, role, workspaceId = "wor
         </div>
       </div>
       
+      {(audit||[]).length > 0 && (
+        <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+          {[["Critical", SEVERITY_COLOR.Critical, SEVERITY_BG.Critical], ["Warning", SEVERITY_COLOR.Warning, SEVERITY_BG.Warning], ["Info", SEVERITY_COLOR.Info, SEVERITY_BG.Info]].map(([sev, col, bg]) => (
+            <div key={sev} onClick={() => { setFilterSeverity(sev === filterSeverity ? "All" : sev); setPage(1); }}
+              style={{ padding:"6px 14px", borderRadius:"var(--r-sm)", background: bg, color: col, fontSize:12, fontWeight:600, cursor:"pointer", border: filterSeverity === sev ? `1.5px solid ${col}` : "1.5px solid transparent", userSelect:"none" }}>
+              {sev}: {severityCounts[sev]}
+            </div>
+          ))}
+        </div>
+      )}
+
       <CollapsibleSection title="Filters" defaultOpen={true}>
         <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:18 }}>
           <SearchInput value={search} onChange={setSearch} placeholder="Search logs…" />
-          <select style={{ ...inputStyle, width:"auto" }} value={filterModule}   onChange={e=>setFilterModule(e.target.value)}>{modules.map(m=><option key={m}>{m}</option>)}</select>
-          <select style={{ ...inputStyle, width:"auto" }} value={filterAction}   onChange={e=>setFilterAction(e.target.value)}>{actions.map(a=><option key={a}>{a}</option>)}</select>
-          <select style={{ ...inputStyle, width:"auto" }} value={filterUser}     onChange={e=>setFilterUser(e.target.value)}>{users.map(u=><option key={u}>{u}</option>)}</select>
-          <select style={{ ...inputStyle, width:"auto" }} value={filterSeverity} onChange={e=>setFilterSeverity(e.target.value)}>
+          <select style={{ ...inputStyle, width:"auto" }} value={filterModule}   onChange={e=>{setFilterModule(e.target.value);setPage(1);}}>{modules.map(m=><option key={m}>{m}</option>)}</select>
+          <select style={{ ...inputStyle, width:"auto" }} value={filterAction}   onChange={e=>{setFilterAction(e.target.value);setPage(1);}}>{actions.map(a=><option key={a}>{a}</option>)}</select>
+          <select style={{ ...inputStyle, width:"auto" }} value={filterUser}     onChange={e=>{setFilterUser(e.target.value);setPage(1);}}>{users.map(u=><option key={u}>{u}</option>)}</select>
+          <select style={{ ...inputStyle, width:"auto" }} value={filterSeverity} onChange={e=>{setFilterSeverity(e.target.value);setPage(1);}}>
             <option value="All">All severity</option>
             <option>Info</option><option>Warning</option><option>Critical</option>
           </select>
-          <input style={{ ...inputStyle, width:"auto" }} type="date" value={filterDateFrom} onChange={e=>setFilterDateFrom(e.target.value)} />
-          <input style={{ ...inputStyle, width:"auto" }} type="date" value={filterDateTo}   onChange={e=>setFilterDateTo(e.target.value)} />
+          <input style={{ ...inputStyle, width:"auto" }} type="date" value={filterDateFrom} onChange={e=>{setFilterDateFrom(e.target.value);setPage(1);}} />
+          <input style={{ ...inputStyle, width:"auto" }} type="date" value={filterDateTo}   onChange={e=>{setFilterDateTo(e.target.value);setPage(1);}} />
+          <button style={btnStyle(filterDateFrom===todayStr && filterDateTo===todayStr ? "primary" : "ghost","sm")} onClick={filterDateFrom===todayStr && filterDateTo===todayStr ? ()=>{setFilterDateFrom("");setFilterDateTo("");setPage(1);} : setToday}>Today</button>
+          {activeFilterCount > 0 && (
+            <button style={btnStyle("ghost","sm")} onClick={resetFilters}>
+              Reset{" "}
+              <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:16, height:16, borderRadius:"50%", background:"var(--accent)", color:"#fff", fontSize:10, fontWeight:700, marginLeft:4 }}>{activeFilterCount}</span>
+            </button>
+          )}
         </div>
       </CollapsibleSection>
       
-      {filtered.length===0 ? <EmptyState icon="📋" title="No audit logs" sub="Actions will appear here." /> : (
+      {filtered.length===0 ? (
+        (audit||[]).length > 0
+          ? <EmptyState icon="🔍" title="No matching logs" sub={<span>No entries match your filters. <button style={{ background:"none", border:"none", color:"var(--accent)", cursor:"pointer", padding:0, fontSize:"inherit" }} onClick={resetFilters}>Clear filters</button></span>} />
+          : <EmptyState icon="📋" title="No audit logs" sub="Actions will appear here." />
+      ) : (
+        <>
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-            <thead><tr style={{ background:"var(--surface)" }}>{["Severity","Time","User","Module","Action","Description","Changes",""].map(h=><th key={h} style={{ padding:"10px 14px", textAlign:"left", fontWeight:600, color:"var(--text-muted)", fontSize:11, textTransform:"uppercase", whiteSpace:"nowrap" }}>{h}</th>)}</tr></thead>
-            <tbody>{filtered.map((a,i)=>{
+            <thead><tr style={{ background:"var(--surface)" }}>
+              {[
+                { label:"Severity", col:"sev"  },
+                { label:"Time",     col:"ts"   },
+                { label:"User",     col:"user" },
+                { label:"Module",   col:"mod"  },
+                { label:"Action",   col:null   },
+                { label:"Description", col:null },
+                { label:"Changes",  col:null   },
+                { label:"",         col:null   },
+              ].map(({ label, col }) => (
+                <th key={label} onClick={col ? () => toggleSort(col) : undefined}
+                  style={{ padding:"10px 14px", textAlign:"left", fontWeight:600, color:"var(--text-muted)", fontSize:11, textTransform:"uppercase", whiteSpace:"nowrap", cursor: col ? "pointer" : "default", userSelect:"none" }}>
+                  {label}{col && <SortIcon col={col} />}
+                </th>
+              ))}
+            </tr></thead>
+            <tbody>{paginated.map((a,i)=>{
               const sev = a.severity || "Info";
               const userName = a.userName || a.user || "—";
+              const isHovered = hoveredRow === a.id;
               return (
-                <tr key={a.id} style={{ borderTop:"1px solid var(--border)", background:i%2===0?"transparent":"var(--stripe)", cursor:"pointer" }} onClick={() => setViewingEntry(a)}>
+                <tr key={a.id}
+                  style={{ borderTop:"1px solid var(--border)", background: isHovered ? "var(--accent-dim)" : i%2===0?"transparent":"var(--stripe)", cursor:"pointer", transition:"background 0.1s" }}
+                  onClick={() => setViewingEntry(a)}
+                  onMouseEnter={() => setHoveredRow(a.id)}
+                  onMouseLeave={() => setHoveredRow(null)}>
                   <td style={{ padding:"10px 14px" }}>
                     <span style={{ fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:"var(--r-pill)", background: SEVERITY_BG[sev], color: SEVERITY_COLOR[sev] }}>{sev}</span>
                   </td>
-                  <td style={{ padding:"10px 14px", color:"var(--text-muted)", whiteSpace:"nowrap", fontSize:11 }}>{new Date(a.ts).toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"})}</td>
+                  <td style={{ padding:"10px 14px", color:"var(--text-muted)", whiteSpace:"nowrap", fontSize:11 }} title={new Date(a.ts).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})}>{relTime(a.ts)}</td>
                   <td style={{ padding:"10px 14px", color:"var(--accent)", fontWeight:500 }}>{userName}</td>
                   <td style={{ padding:"10px 14px", color:"var(--text-muted)" }}>{a.module}</td>
                   <td style={{ padding:"10px 14px" }}><Badge label={a.action} size="sm" /></td>
@@ -151,6 +271,22 @@ export default function AuditLogsTab({ audit, setAudit, role, workspaceId = "wor
             })}</tbody>
           </table>
         </div>
+        {totalPages > 1 && (
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:14, flexWrap:"wrap", gap:8 }}>
+            <span style={{ fontSize:12, color:"var(--text-muted)" }}>
+              Showing {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE, filtered.length)} of {filtered.length}
+            </span>
+            <div style={{ display:"flex", gap:6 }}>
+              <button style={btnStyle("ghost","sm")} disabled={page===1} onClick={()=>setPage(p=>p-1)}>← Prev</button>
+              {Array.from({length: Math.min(totalPages, 7)}, (_,i) => {
+                const p = totalPages <= 7 ? i+1 : page <= 4 ? i+1 : page >= totalPages-3 ? totalPages-6+i : page-3+i;
+                return <button key={p} style={{ ...btnStyle(p===page?"primary":"ghost","sm"), minWidth:32 }} onClick={()=>setPage(p)}>{p}</button>;
+              })}
+              <button style={btnStyle("ghost","sm")} disabled={page===totalPages} onClick={()=>setPage(p=>p+1)}>Next →</button>
+            </div>
+          </div>
+        )}
+        </>
       )}
     </div>
   );

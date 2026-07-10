@@ -7,6 +7,7 @@ export default function WorkspacesSection({ workspaces, setWorkspaces, currentWo
   const [editingWorkspace, setEditingWorkspace] = useState(null);
   const [workspaceForm, setWorkspaceForm] = useState({});
   const [workspaceTab, setWorkspaceTab] = useState("basic");
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const openAddWorkspace = () => {
     setEditingWorkspace(null);
@@ -31,6 +32,9 @@ export default function WorkspacesSection({ workspaces, setWorkspaces, currentWo
 
   const saveWorkspace = () => {
     if (!workspaceForm.name.trim()) { toast("Workspace name is required", "error"); return; }
+    if (workspaceForm.ownerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(workspaceForm.ownerEmail)) {
+      toast("Enter a valid email address", "error"); return;
+    }
     if (editingWorkspace) {
       const updated = workspaces.map(w => w.id === editingWorkspace.id ? { ...workspaceForm } : w);
       setWorkspaces(updated);
@@ -48,6 +52,12 @@ export default function WorkspacesSection({ workspaces, setWorkspaces, currentWo
 
   const deleteWorkspace = (workspaceId) => {
     if (workspaces.length <= 1) { toast("Cannot delete the last workspace", "error"); return; }
+    setConfirmDeleteId(workspaceId);
+  };
+
+  const confirmDelete = () => {
+    const workspaceId = confirmDeleteId;
+    setConfirmDeleteId(null);
     const updated = workspaces.filter(w => w.id !== workspaceId);
     setWorkspaces(updated);
     saveWorkspaces(updated);
@@ -66,6 +76,11 @@ export default function WorkspacesSection({ workspaces, setWorkspaces, currentWo
           <button style={btnStyle("primary", "xs")} onClick={openAddWorkspace}>+ New Workspace</button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {workspaces.length === 0 && (
+            <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13, border: "1px dashed var(--border)", borderRadius: "var(--r-sm)" }}>
+              No workspaces yet. Create one to get started.
+            </div>
+          )}
           {workspaces.map(w => (
             <div key={w.id} style={{
               padding: 10,
@@ -76,7 +91,12 @@ export default function WorkspacesSection({ workspaces, setWorkspaces, currentWo
             }}>
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 16 }}>{w.icon || "📁"}</span>
+                  <span style={{
+                    fontSize: 16, width: 28, height: 28, borderRadius: "var(--r-sm)",
+                    background: w.color ? `${w.color}22` : "var(--surface-raised)",
+                    border: `2px solid ${w.color || "var(--border)"}`,
+                    display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+                  }}>{w.icon || "📁"}</span>
                   {w.name}
                   {w.id === currentWorkspaceId && <span style={{ fontSize: 10, padding: "1px 6px", background: "var(--accent)", color: "#fff", borderRadius: 99, fontWeight: 500 }}>Active</span>}
                 </div>
@@ -96,11 +116,41 @@ export default function WorkspacesSection({ workspaces, setWorkspaces, currentWo
         </div>
       </SectionCard>
 
+      {confirmDeleteId && (
+        <Modal title="Delete Workspace" onClose={() => setConfirmDeleteId(null)} width={380}>
+          <p style={{ fontSize: 13, color: "var(--text)", marginBottom: 20 }}>
+            Are you sure you want to delete <strong>{workspaces.find(w => w.id === confirmDeleteId)?.name}</strong>? This cannot be undone.
+          </p>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button style={btnStyle("ghost")} onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+            <button style={{ ...btnStyle("primary"), background: "var(--danger)" }} onClick={confirmDelete}>Delete</button>
+          </div>
+        </Modal>
+      )}
+
       {showWorkspaceModal && (
-        <Modal title={editingWorkspace ? "Edit Workspace" : "New Workspace"} onClose={() => setShowWorkspaceModal(false)} width={600}>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            <button style={{ ...btnStyle("soft", "xs"), background: workspaceTab === "basic" ? "var(--surface-raised)" : "transparent" }} onClick={() => setWorkspaceTab("basic")}>Basic</button>
-            <button style={{ ...btnStyle("soft", "xs"), background: workspaceTab === "finance" ? "var(--surface-raised)" : "transparent" }} onClick={() => setWorkspaceTab("finance")}>Finance</button>
+        <Modal title={editingWorkspace ? "Edit Workspace" : "New Workspace"} onClose={() => setShowWorkspaceModal(false)} width={600}
+          onKeyDown={e => { if (e.key === "Enter" && e.ctrlKey) saveWorkspace(); }}
+        >
+          <div style={{ display: "flex", gap: 2, marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 0 }}>
+            {[
+              { key: "basic", label: "Basic" },
+              { key: "finance", label: "Finance" },
+              { key: "rates", label: "Exchange Rates" },
+            ].map(tab => (
+              <button
+                key={tab.key}
+                style={{
+                  ...btnStyle("ghost", "xs"),
+                  borderRadius: "var(--r-sm) var(--r-sm) 0 0",
+                  borderBottom: workspaceTab === tab.key ? "2px solid var(--accent)" : "2px solid transparent",
+                  color: workspaceTab === tab.key ? "var(--accent)" : "var(--text-muted)",
+                  fontWeight: workspaceTab === tab.key ? 600 : 400,
+                  paddingBottom: 8,
+                }}
+                onClick={() => setWorkspaceTab(tab.key)}
+              >{tab.label}</button>
+            ))}
           </div>
 
           {workspaceTab === "basic" && (
@@ -132,7 +182,15 @@ export default function WorkspacesSection({ workspaces, setWorkspaces, currentWo
                 <input style={inputStyle} value={workspaceForm.businessId} onChange={e => setWorkspaceForm(p => ({ ...p, businessId: e.target.value }))} />
               </FormField>
               <FormField label="Icon">
-                <input style={inputStyle} value={workspaceForm.icon} onChange={e => setWorkspaceForm(p => ({ ...p, icon: e.target.value }))} placeholder="📁" />
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input style={{ ...inputStyle, flex: 1 }} value={workspaceForm.icon} onChange={e => setWorkspaceForm(p => ({ ...p, icon: e.target.value }))} placeholder="📁" maxLength={2} />
+                  <span style={{
+                    fontSize: 22, width: 36, height: 36, display: "inline-flex", alignItems: "center",
+                    justifyContent: "center", borderRadius: "var(--r-sm)",
+                    background: workspaceForm.color ? `${workspaceForm.color}22` : "var(--surface-raised)",
+                    border: `2px solid ${workspaceForm.color || "var(--border)"}`, flexShrink: 0
+                  }}>{workspaceForm.icon || "📁"}</span>
+                </div>
               </FormField>
               <FormField label="Color">
                 <input style={inputStyle} type="color" value={workspaceForm.color} onChange={e => setWorkspaceForm(p => ({ ...p, color: e.target.value }))} />
@@ -177,9 +235,34 @@ export default function WorkspacesSection({ workspaces, setWorkspaces, currentWo
             </div>
           )}
 
+          {workspaceTab === "rates" && (
+            <div>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+                Set exchange rates relative to 1 {workspaceForm.currency || "INR"}. Used for multi-currency reporting.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                {Object.entries(workspaceForm.exchangeRates || {}).map(([currency, rate]) => (
+                  <FormField key={currency} label={`1 ${workspaceForm.currency || "INR"} → ${currency}`}>
+                    <input
+                      style={inputStyle}
+                      type="number"
+                      step="0.0001"
+                      min={0}
+                      value={rate}
+                      onChange={e => setWorkspaceForm(p => ({
+                        ...p,
+                        exchangeRates: { ...p.exchangeRates, [currency]: parseFloat(e.target.value) || 0 }
+                      }))}
+                    />
+                  </FormField>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 24 }}>
             <button style={btnStyle("ghost")} onClick={() => setShowWorkspaceModal(false)}>Cancel</button>
-            <button style={btnStyle("primary")} onClick={saveWorkspace}>{editingWorkspace ? "Update Workspace" : "Create Workspace"}</button>
+            <button style={btnStyle("primary")} onClick={saveWorkspace} title="Ctrl+Enter">{editingWorkspace ? "Update Workspace" : "Create Workspace"}</button>
           </div>
         </Modal>
       )}

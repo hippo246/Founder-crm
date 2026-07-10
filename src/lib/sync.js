@@ -73,7 +73,6 @@ export const syncLoadCollection = async (workspaceId, key) => {
   try {
     const colRef = collection(db, "workspaces", workspaceId, colName);
     const snapshot = await getDocs(colRef);
-    if (snapshot.empty) return null;
     return snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
   } catch (err) {
     console.warn(`[sync] Failed to load ${key} from Firestore:`, err.message);
@@ -106,10 +105,8 @@ export const subscribeToCollection = (workspaceId, key, setter) => {
   try {
     const colRef = collection(db, "workspaces", workspaceId, colName);
     const unsubscribe = onSnapshot(colRef, (snapshot) => {
-      if (!snapshot.empty) {
-        const items = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
-        setter(items);
-      }
+      const items = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+      setter(items);
     }, (err) => {
       console.warn(`[sync] onSnapshot error for ${key}:`, err.message);
     });
@@ -147,7 +144,7 @@ export const hydrateFromFirestore = async (workspaceId) => {
 
   await Promise.allSettled(keys.map(async (key) => {
     const items = await syncLoadCollection(workspaceId, key);
-    if (items && items.length > 0) {
+    if (items !== null) {
       results[key] = items;
     }
   }));
