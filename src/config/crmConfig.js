@@ -18,6 +18,7 @@ export const defaultSettings = {
   invoiceFooter: "Thank you for your business!",
   exportPrefix: "FOUNDER-OS",
   theme: "dark",
+  glassUI: true,
   role: "Owner",
   followUpDays: 3,
   sessionTimeout: 30,

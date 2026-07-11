@@ -77,15 +77,29 @@ function TemplateForm({ type, initial = {}, onSave, onClose }) {
   const defaults = { name: "", category: categories[0], body: "", subject: "", active: true, createdAt: new Date().toISOString().slice(0, 10) };
   const [f, setF] = useState({ ...defaults, ...initial });
   const [showLivePreview, setShowLivePreview] = useState(false);
+  const bodyRef = useRef(null);
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
-  const insertVar = v => setF(p => ({ ...p, body: p.body + `{${v}}` }));
+  // Insert at the caret instead of always appending to the end, so editing an existing
+  // template mid-sentence works the way people expect.
+  const insertVar = v => {
+    const el = bodyRef.current;
+    const token = `{${v}}`;
+    if (!el) { setF(p => ({ ...p, body: p.body + token })); return; }
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    setF(p => ({ ...p, body: p.body.slice(0, start) + token + p.body.slice(end) }));
+    requestAnimationFrame(() => { el.focus(); const pos = start + token.length; el.setSelectionRange(pos, pos); });
+  };
   const usedVars = VARS.filter(v => f.body.includes(`{${v}}`) || f.subject?.includes(`{${v}}`));
+  const WA_LIMIT = 1024;
+  const overLimit = isWA && f.body.length > WA_LIMIT;
 
   const handleSave = () => {
     if (!f.name.trim()) { toast("Template name is required", "error"); return; }
     if (!f.body.trim()) { toast("Message body is required", "error"); return; }
     if (!isWA && !f.subject.trim()) { toast("Subject line is required", "error"); return; }
-    onSave(f);
+    if (overLimit) { toast(`Message exceeds the ${WA_LIMIT} character WhatsApp limit`, "error"); return; }
+    onSave({ ...f, name: f.name.trim() });
   };
 
   return (
@@ -96,7 +110,7 @@ function TemplateForm({ type, initial = {}, onSave, onClose }) {
       </div>
       {!isWA && <FormField label="Subject line"><input style={inputStyle} value={f.subject} onChange={set("subject")} placeholder="e.g. Invoice for {projectName}" /></FormField>}
       <FormField label="Message body">
-        <textarea style={{ ...inputStyle, minHeight: 130, resize: "vertical", fontFamily: "monospace", lineHeight: 1.6 }} value={f.body} onChange={set("body")} placeholder={`Hi {clientName}, your {projectName} is ready…`} />
+        <textarea ref={bodyRef} style={{ ...inputStyle, minHeight: 130, resize: "vertical", fontFamily: "monospace", lineHeight: 1.6, borderColor: overLimit ? "#DC2626" : undefined }} value={f.body} onChange={set("body")} placeholder={`Hi {clientName}, your {projectName} is ready…`} />
       </FormField>
 
       {/* Toolbar row: var chips + char count + preview toggle */}
@@ -108,7 +122,7 @@ function TemplateForm({ type, initial = {}, onSave, onClose }) {
           </button>
         ))}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-          {isWA && <span style={{ fontSize: 11, color: f.body.length > 900 ? "#DC2626" : "var(--text-muted)" }}>{f.body.length}/1024</span>}
+          {isWA && <span style={{ fontSize: 11, fontWeight: overLimit ? 700 : 400, color: overLimit ? "#DC2626" : f.body.length > 900 ? "#D97706" : "var(--text-muted)" }}>{f.body.length}/{WA_LIMIT}</span>}
           <button type="button" onClick={() => setShowLivePreview(p => !p)} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 6, border: "1px solid var(--border)", background: showLivePreview ? "var(--accent)" : "transparent", color: showLivePreview ? "#fff" : "var(--text-muted)", cursor: "pointer" }}>
             {showLivePreview ? "Hide preview" : "Live preview"}
           </button>
@@ -141,7 +155,7 @@ function TemplateForm({ type, initial = {}, onSave, onClose }) {
       </div>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
         <button style={btnStyle("ghost")} onClick={onClose}>Cancel</button>
-        <button style={btnStyle("primary")} onClick={handleSave}>Save template</button>
+        <button style={{ ...btnStyle("primary"), opacity: overLimit ? 0.5 : 1, cursor: overLimit ? "not-allowed" : "pointer" }} disabled={overLimit} onClick={handleSave}>Save template</button>
       </div>
     </div>
   );
@@ -156,10 +170,16 @@ export default function WhatsAppTemplatesTab({ whatsappTemplates, setWhatsappTem
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [bulkConfirm, setBulkConfirm] = useState(false);
   const [preview, setPreview] = useState(null);
   const [importRows, setImportRows] = useState(null);
   const [sortBy, setSortBy] = useState("newest");
+  const [selected, setSelected] = useState(new Set());
   const importRef = useRef(null);
+
+  // Selection is tied to whichever list is currently visible — jumping subtabs
+  // with stale ids selected would silently no-op bulk actions, so clear it.
+  useEffect(() => { setSelected(new Set()); }, [activeSubtab]);
 
   // Migrate any data previously stored under the old localStorage key on first mount
   useEffect(() => {
@@ -178,7 +198,7 @@ export default function WhatsAppTemplatesTab({ whatsappTemplates, setWhatsappTem
     const templates = activeSubtab === "whatsapp" ? (whatsappTemplates||[]) : emailTemplates;
     const list = templates.filter(t => {
       const q = search.toLowerCase();
-      return (!q || t.name?.toLowerCase().includes(q) || t.body?.toLowerCase().includes(q) || t.subject?.toLowerCase().includes(q))
+      return (!q || t.name?.toLowerCase().includes(q) || t.body?.toLowerCase().includes(q) || t.subject?.toLowerCase().includes(q) || t.category?.toLowerCase().includes(q))
         && (filterCategory==="All" || t.category===filterCategory);
     });
     if (sortBy === "oldest")   list.sort((a, b) => (a.createdAt||"") > (b.createdAt||"") ?  1 : -1);
@@ -206,12 +226,15 @@ export default function WhatsAppTemplatesTab({ whatsappTemplates, setWhatsappTem
   })();
 
   const save = (f) => {
+    const isDupe = ops.list.some(t => t.id !== editing?.id && t.name.trim().toLowerCase() === f.name.trim().toLowerCase());
     if (editing) {
       const u = ops.list.map(t => t.id === editing.id ? { ...editing, ...f } : t);
-      ops.set(u); ops.persist(u); addAudit(ops.auditPrefix, "Update", `Updated: ${f.name}`); toast("Template updated");
+      ops.set(u); ops.persist(u); addAudit(ops.auditPrefix, "Update", `Updated: ${f.name}`);
+      toast(isDupe ? `Template updated (another "${f.name}" also exists)` : "Template updated");
     } else {
       const u = [{ ...f, id: genId() }, ...ops.list];
-      ops.set(u); ops.persist(u); addAudit(ops.auditPrefix, "Create", `Created: ${f.name}`); toast("Template added");
+      ops.set(u); ops.persist(u); addAudit(ops.auditPrefix, "Create", `Created: ${f.name}`);
+      toast(isDupe ? `Template added (another "${f.name}" also exists)` : "Template added");
     }
     setShowForm(false); setEditing(null);
   };
@@ -231,13 +254,15 @@ export default function WhatsAppTemplatesTab({ whatsappTemplates, setWhatsappTem
   };
 
   const copyMsg = (body, id) => {
-    navigator.clipboard?.writeText(applyVars(body)).catch(() => {});
-    // track lastUsed so "recently used" sort works
-    if (id) {
-      const u = ops.list.map(x => x.id === id ? { ...x, lastUsed: new Date().toISOString() } : x);
-      ops.set(u); ops.persist(u);
-    }
-    toast("Message copied to clipboard");
+    if (!navigator.clipboard) { toast("Clipboard not available in this browser", "error"); return; }
+    navigator.clipboard.writeText(applyVars(body)).then(() => {
+      // track lastUsed so "recently used" sort works
+      if (id) {
+        const u = ops.list.map(x => x.id === id ? { ...x, lastUsed: new Date().toISOString() } : x);
+        ops.set(u); ops.persist(u);
+      }
+      toast("Message copied to clipboard");
+    }).catch(() => toast("Couldn't copy to clipboard", "error"));
   };
 
   const duplicate = (t) => {
@@ -279,10 +304,32 @@ export default function WhatsAppTemplatesTab({ whatsappTemplates, setWhatsappTem
     setImportRows(null);
   };
 
+  const toggleSelect = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const selectAllFiltered = () => setSelected(new Set(filtered.map(t => t.id)));
+  const clearSelection = () => setSelected(new Set());
+
+  const bulkDelete = () => {
+    const n = selected.size;
+    const u = ops.list.filter(t => !selected.has(t.id));
+    ops.set(u); ops.persist(u); addAudit(ops.auditPrefix, "Bulk Delete", `Deleted ${n} template${n > 1 ? "s" : ""}`);
+    toast(`${n} template${n > 1 ? "s" : ""} deleted`, "info"); clearSelection();
+  };
+  const bulkSetActive = (active) => {
+    const n = selected.size;
+    const u = ops.list.map(t => selected.has(t.id) ? { ...t, active } : t);
+    ops.set(u); ops.persist(u); addAudit(ops.auditPrefix, active ? "Bulk Activate" : "Bulk Deactivate", `${active ? "Activated" : "Deactivated"} ${n} template${n > 1 ? "s" : ""}`);
+    toast(`${n} template${n > 1 ? "s" : ""} ${active ? "activated" : "deactivated"}`); clearSelection();
+  };
+
   const handleExport = () => { 
     const filename = activeSubtab === "whatsapp" ? "whatsapp-templates" : "email-templates";
-    exportToCSV(filename, filtered); 
-    toast(`${activeSubtab === "whatsapp" ? "WhatsApp" : "Email"} templates exported to CSV`);
+    const rows = selected.size > 0 ? filtered.filter(t => selected.has(t.id)) : filtered;
+    exportToCSV(filename, rows); 
+    toast(selected.size > 0 ? `${rows.length} selected template${rows.length > 1 ? "s" : ""} exported to CSV` : `${activeSubtab === "whatsapp" ? "WhatsApp" : "Email"} templates exported to CSV`);
   };
 
   const currentCategories = activeSubtab === "whatsapp" ? WA_CATEGORIES : EMAIL_CATEGORIES;
@@ -294,6 +341,7 @@ export default function WhatsAppTemplatesTab({ whatsappTemplates, setWhatsappTem
       <input ref={importRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={handleImportFile} />
 
       {confirm && <Confirm msg="Delete this template?" onYes={() => del(confirm)} onNo={() => setConfirm(null)} />}
+      {bulkConfirm && <Confirm msg={`Delete ${selected.size} selected template${selected.size > 1 ? "s" : ""}? This can't be undone.`} onYes={() => { bulkDelete(); setBulkConfirm(false); }} onNo={() => setBulkConfirm(false)} />}
       {(showForm || editing) && <Modal title={editing ? `Edit ${activeSubtab} template` : `New ${activeSubtab} template`} onClose={() => { setShowForm(false); setEditing(null); }} width={620}><TemplateForm type={activeSubtab} initial={editing || {}} onSave={save} onClose={() => { setShowForm(false); setEditing(null); }} /></Modal>}
 
       {/* Import confirmation modal */}
@@ -383,10 +431,33 @@ export default function WhatsAppTemplatesTab({ whatsappTemplates, setWhatsappTem
         </select>
         <span style={{ fontSize:12, color:"var(--text-muted)", marginLeft:"auto" }}>{filtered.length} of {currentTemplates.length}</span>
       </div>
-      {filtered.length===0 ? <EmptyState icon={activeSubtab==="whatsapp"?"💬":"📧"} title={`No ${activeSubtab} templates`} sub={`Create your first ${activeSubtab} message template.`} action={<button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ New template</button>} /> : (
+      {role !== "Viewer" && filtered.length > 0 && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap" }}>
+          <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--text-muted)", cursor:"pointer" }}>
+            <input type="checkbox" checked={selected.size > 0 && selected.size === filtered.length} onChange={e => e.target.checked ? selectAllFiltered() : clearSelection()} />
+            Select all ({filtered.length})
+          </label>
+          {selected.size > 0 && (
+            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", padding:"4px 10px", borderRadius:8, background:"var(--surface-2,#f5f5f5)" }}>
+              <span style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>{selected.size} selected</span>
+              <button style={btnStyle("ghost","sm")} onClick={() => bulkSetActive(true)}>Activate</button>
+              <button style={btnStyle("ghost","sm")} onClick={() => bulkSetActive(false)}>Deactivate</button>
+              {(role==="Owner"||role==="Admin") && <button style={{ ...btnStyle("ghost","sm"), color:"var(--danger,#DC2626)" }} onClick={() => setBulkConfirm(true)}>Delete</button>}
+              <button style={btnStyle("ghost","sm")} onClick={clearSelection}>Clear</button>
+            </div>
+          )}
+        </div>
+      )}
+      {filtered.length===0 ? (
+        currentTemplates.length > 0 ? (
+          <EmptyState icon="🔍" title="No matching templates" sub="Try a different search term or category filter." action={<button style={btnStyle("ghost")} onClick={() => { setSearch(""); setFilterCategory("All"); }}>Clear filters</button>} />
+        ) : (
+          <EmptyState icon={activeSubtab==="whatsapp"?"💬":"📧"} title={`No ${activeSubtab} templates`} sub={`Create your first ${activeSubtab} message template.`} action={<button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ New template</button>} />
+        )
+      ) : (
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:14 }}>
           {filtered.map(t => {
-            const isNew = t.createdAt === new Date().toISOString().slice(0, 10);
+            const isNew = isToday(t.createdAt);
             const cardVars = VARS.filter(v => (t.body + (t.subject||"")).includes(`{${v}}`));
             const charCount = t.body?.length || 0;
             return (
@@ -394,6 +465,7 @@ export default function WhatsAppTemplatesTab({ whatsappTemplates, setWhatsappTem
                 {/* Header */}
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
+                    {role !== "Viewer" && <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} style={{ flexShrink:0, cursor:"pointer" }} />}
                     {isNew && <span style={{ fontSize:10, fontWeight:700, color:"#fff", background:"#059669", borderRadius:4, padding:"1px 5px", flexShrink:0 }}>NEW</span>}
                     <div style={{ fontWeight:600, fontSize:14, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.name}</div>
                   </div>
@@ -423,7 +495,7 @@ export default function WhatsAppTemplatesTab({ whatsappTemplates, setWhatsappTem
 
                 {/* Last used */}
                 {t.lastUsed && (
-                  <div style={{ fontSize:10, color:"var(--text-muted)" }}>Last used {new Date(t.lastUsed).toLocaleDateString()}</div>
+                  <div style={{ fontSize:10, color:"var(--text-muted)" }}>Last used {fmtDate(t.lastUsed)}</div>
                 )}
 
                 {/* Actions */}

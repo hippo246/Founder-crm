@@ -232,7 +232,24 @@ function InvoiceDetail({ invoice, onClose, onLinkedSave, payments, role, invoice
 
 export default function InvoicesTab({ invoices, setInvoices, addAudit, role, projects, contacts, settings, payments, setPayments, workspaceId = "workspace-1", onLinkedSave, setTab }) {
 
-  const [view, setView] = useState("table");
+  const [view, setView] = useState(() => {
+        // Default to cards view on mobile
+        if (typeof window !== "undefined") {
+          return window.innerWidth < 768 ? "cards" : "table";
+        }
+        return "cards";
+      });
+
+      // Auto-switch to cards view on mobile
+      useEffect(() => {
+        const handleResize = () => {
+          if (window.innerWidth < 768 && view !== "cards") {
+            setView("cards");
+          }
+        };
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+      }, [view]);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterProject, setFilterProject] = useState("All");
@@ -246,6 +263,7 @@ export default function InvoicesTab({ invoices, setInvoices, addAudit, role, pro
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
   const [selectedIds, setSelectedIds] = useState([]);
+  const [showImportMenu, setShowImportMenu] = useState(false);
 
   // Currency symbol helper
   const currSymbol = (currency) => {
@@ -979,6 +997,89 @@ export default function InvoicesTab({ invoices, setInvoices, addAudit, role, pro
     toast("Invoice duplicated");
   };
 
+  // Import functions
+  const downloadImportTemplate = () => {
+    const templateData = [
+      {
+        "Invoice #": "INV-0001",
+        "Title": "Website Development",
+        "Client": "John Doe",
+        "Company": "Tech Corp",
+        "Project": "Website Redesign",
+        "Issue Date": new Date().toISOString().split('T')[0],
+        "Due Date": "",
+        "Status": "Draft",
+        "Currency": "INR",
+        "Subtotal": "1000",
+        "Discount": "0",
+        "Tax": "180",
+        "Grand Total": "1180",
+        "Notes": ""
+      }
+    ];
+    exportToCSV("invoice-import-template", templateData);
+    toast("Template downloaded");
+  };
+
+  const handleImportCSV = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const csvData = event.target.result;
+        const lines = csvData.split('\n');
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+        
+        const importedInvoices = [];
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim()) continue;
+          
+          const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, ''));
+          const invoice = {};
+          
+          headers.forEach((header, index) => {
+            invoice[header] = values[index] || '';
+          });
+          
+          importedInvoices.push({
+            id: genId(),
+            invoiceNumber: invoice["Invoice #"] || `INV-${(invoices.length + importedInvoices.length + 1).toString().padStart(4, '0')}`,
+            invoiceTitle: invoice["Title"] || "",
+            clientName: invoice["Client"] || "",
+            clientCompany: invoice["Company"] || "",
+            projectName: invoice["Project"] || "",
+            issueDate: invoice["Issue Date"] || new Date().toISOString().split('T')[0],
+            dueDate: invoice["Due Date"] || "",
+            status: invoice["Status"] || "Draft",
+            currency: invoice["Currency"] || "INR",
+            subtotal: Number(invoice["Subtotal"]) || 0,
+            discountTotal: Number(invoice["Discount"]) || 0,
+            taxTotal: Number(invoice["Tax"]) || 0,
+            grandTotal: Number(invoice["Grand Total"]) || 0,
+            paymentTerms: settings.paymentTerms || "Net 30",
+            notes: invoice["Notes"] || "",
+            internalNotes: "",
+            footerText: settings.invoiceFooter || "Thank you for your business!",
+            lineItems: []
+          });
+        }
+        
+        const newInvoices = [...invoices, ...importedInvoices];
+        setInvoices(newInvoices);
+        saveWorkspaceData("invoices", newInvoices, workspaceId);
+        addAudit("Invoices", "Import", `Imported ${importedInvoices.length} invoice(s)`);
+        toast(`${importedInvoices.length} invoice(s) imported successfully`);
+        setShowImportMenu(false);
+      } catch (error) {
+        console.error("Import error:", error);
+        toast("Failed to import CSV", "error");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // Export CSV
   const handleExport = () => {
     const dataForExport = filtered.map(inv => ({
@@ -1249,6 +1350,51 @@ export default function InvoicesTab({ invoices, setInvoices, addAudit, role, pro
               onClick={() => setView("table")}
             >≡ Table</button>
           </div>
+          <div style={{ position: "relative" }}>
+            <button style={btnStyle("ghost", "sm")} onClick={() => setShowImportMenu(!showImportMenu)}>↑ Import</button>
+            {showImportMenu && (
+              <div style={{
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                boxShadow: "var(--shadow-md)",
+                padding: "8px 0",
+                minWidth: "200px",
+                zIndex: 100
+              }}>
+                <button style={{
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 16px",
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  fontSize: 13
+                }} onClick={downloadImportTemplate}>
+                  📄 Download Template
+                </button>
+                <label style={{
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 16px",
+                  cursor: "pointer",
+                  display: "block",
+                  fontSize: 13
+                }}>
+                  📂 Upload CSV
+                  <input
+                    type="file"
+                    accept=".csv"
+                    style={{ display: "none" }}
+                    onChange={handleImportCSV}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
           <button data-testid="invoice-export-csv" style={btnStyle("ghost", "sm")} onClick={handleExport}>↓ Export</button>
           {(role === "Owner" || role === "Admin") && (
             <button data-testid="invoice-create" style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Create Invoice</button>
@@ -1306,7 +1452,7 @@ export default function InvoicesTab({ invoices, setInvoices, addAudit, role, pro
           )} 
         />
       ) : view === "cards" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
           {sortedFiltered.map((inv) => {
             const paid = getInvoicePaid[inv.id] || 0;
             const pending = getInvoicePending(inv);
@@ -1317,7 +1463,7 @@ export default function InvoicesTab({ invoices, setInvoices, addAudit, role, pro
             const isSelected = selectedIds.includes(inv.id);
             const sym = currSymbol(inv.currency);
             return (
-              <div key={inv.id} style={{ background: "var(--surface)", border: `1px solid ${isSelected ? "var(--accent,#6366f1)" : isOverdueInv?"#FCA5A5":inv.status==="Paid"?"var(--success)":"var(--border)"}`, borderLeft: `3px solid ${isOverdueInv?"#EF4444":inv.status==="Paid"?"#10B981":inv.status==="Draft"?"#9CA3AF":"var(--accent)"}`, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div key={inv.id} style={{ background: "var(--surface)", border: `1px solid ${isSelected ? "var(--accent,#6366f1)" : isOverdueInv?"#FCA5A5":inv.status==="Paid"?"var(--success)":"var(--border)"}`, borderLeft: `3px solid ${isOverdueInv?"#EF4444":inv.status==="Paid"?"#10B981":inv.status==="Draft"?"#9CA3AF":"var(--accent)"}`, borderRadius: 16, padding: "16px", display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(inv.id)} style={{ cursor: "pointer", accentColor: "var(--accent,#6366f1)" }} />

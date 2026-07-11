@@ -868,7 +868,7 @@ export default function AnalyticsTab({
     const filename = `${currentReport.title.replace(/\s+/g, "_")}_${new Date().toISOString().split('T')[0]}.csv`;
     
     exportToCSV(data, filename);
-    addAudit(`Exported ${currentReport.title} to CSV`, "export");
+    addAudit("Analytics", "Export", `Exported ${currentReport.title} to CSV`);
     toast("Report exported to CSV", "success");
   };
 
@@ -905,72 +905,76 @@ export default function AnalyticsTab({
     `;
     
     openPrintView("generic", printContent, { title: currentReport.title });
-    addAudit(`Printed ${currentReport.title}`, "print");
+    addAudit("Analytics", "Print", `Printed ${currentReport.title}`);
   };
 
   // Handle report selection
   const handleReportSelect = (reportId) => {
     setSelectedReport(reportId);
-    addAudit(`Selected ${REPORT_TYPES.find(r => r.id === reportId)?.label || reportId}`, "view");
+    addAudit("Analytics", "View", `Selected ${REPORT_TYPES.find(r => r.id === reportId)?.label || reportId}`);
   };
 
   // Render UI
   return (
-    <div style={{ padding: "20px", maxWidth: "1400px", margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 25 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: "var(--text)" }}>Business Intelligence Reports</h1>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={exportReportCSV} style={{ ...btnStyle, backgroundColor: "var(--success)" }}>
+    <div style={{ padding: "12px", maxWidth: "1400px", margin: "0 auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: 20, alignItems: "stretch" }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text)" }}>Business Intelligence Reports</h1>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={exportReportCSV} style={{ ...btnStyle, backgroundColor: "var(--success)", flex: 1, minWidth: "120px" }}>
             📊 Export CSV
           </button>
-          <button onClick={printReport} style={{ ...btnStyle, backgroundColor: "var(--accent)" }}>
+          <button onClick={printReport} style={{ ...btnStyle, backgroundColor: "var(--accent)", flex: 1, minWidth: "120px" }}>
             🖨️ Print Report
           </button>
         </div>
       </div>
 
       {/* Report Type Selector */}
-      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 20, marginBottom: 25, alignItems: "start" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 25 }}>
         <div style={{ backgroundColor: "var(--bg-secondary)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
           <div style={{ padding: "12px 14px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
             Report Type
           </div>
-          {REPORT_TYPES.map((report, i) => (
-            <button
-              key={report.id}
-              onClick={() => handleReportSelect(report.id)}
-              style={{
-                display: "flex", alignItems: "center", gap: 9,
-                width: "100%", textAlign: "left",
-                padding: "10px 14px",
-                fontSize: 13,
-                background: selectedReport === report.id ? "var(--accent)" : "transparent",
-                color: selectedReport === report.id ? "white" : "var(--text)",
-                border: "none",
-                borderBottom: i < REPORT_TYPES.length - 1 ? "1px solid var(--border)" : "none",
-                cursor: "pointer",
-                fontWeight: selectedReport === report.id ? 600 : 400,
-                transition: "background 0.15s"
-              }}
-            >
-              <span style={{ fontSize: 15, opacity: 0.85 }}>{report.icon}</span>
-              {report.label}
-            </button>
-          ))}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+            {REPORT_TYPES.map((report, i) => (
+              <button
+                key={report.id}
+                onClick={() => handleReportSelect(report.id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 9,
+                  width: "100%", textAlign: "left",
+                  padding: "12px 14px",
+                  fontSize: 14,
+                  background: selectedReport === report.id ? "var(--accent)" : "transparent",
+                  color: selectedReport === report.id ? "white" : "var(--text)",
+                  border: "none",
+                  borderRight: "1px solid var(--border)",
+                  borderBottom: "1px solid var(--border)",
+                  cursor: "pointer",
+                  fontWeight: selectedReport === report.id ? 600 : 400,
+                  transition: "background 0.15s",
+                  minHeight: "44px"
+                }}
+              >
+                <span style={{ fontSize: 17, opacity: 0.9 }}>{report.icon}</span>
+                {report.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Right column: filters + report content */}
+        {/* Report content */}
         <div>
 
       {/* Filters */}
       <SectionCard title="Report Filters" style={{ marginBottom: 20 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 15 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 15 }}>
           <FormField label="Date Range Start">
             <input
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-              style={inputStyle}
+              style={{ ...inputStyle, minHeight: "44px" }}
             />
           </FormField>
           <FormField label="Date Range End">
@@ -978,23 +982,23 @@ export default function AnalyticsTab({
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-              style={inputStyle}
+              style={{ ...inputStyle, minHeight: "44px" }}
             />
           </FormField>
           <FormField label="Filter by Project">
-            <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} style={inputStyle}>
+            <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} style={{ ...inputStyle, minHeight: "44px" }}>
               <option value="All">All Projects</option>
               {allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </FormField>
           <FormField label="Filter by Client">
-            <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)} style={inputStyle}>
+            <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)} style={{ ...inputStyle, minHeight: "44px" }}>
               <option value="All">All Clients</option>
               {allContacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </FormField>
           <FormField label="Filter by Status">
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={inputStyle}>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ ...inputStyle, minHeight: "44px" }}>
               <option value="All">All Statuses</option>
               {INVOICE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -1007,7 +1011,7 @@ export default function AnalyticsTab({
                 setFilterClient("All");
                 setFilterStatus("All");
               }}
-              style={{ ...btnStyle, backgroundColor: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border)", width: "100%", marginTop: 22 }}
+              style={{ ...btnStyle, backgroundColor: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border)", width: "100%", marginTop: 22, minHeight: "44px" }}
             >
               ✕ Clear Filters
             </button>
@@ -1018,7 +1022,7 @@ export default function AnalyticsTab({
       {/* Report Summary */}
       {currentReport && (
         <SectionCard title={currentReport.title} style={{ marginBottom: 25 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 15, marginBottom: 25 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 25 }}>
             {currentReport.summary.map((stat, idx) => (
               <StatMini
                 key={idx}
@@ -1079,12 +1083,12 @@ export default function AnalyticsTab({
                 <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 12 }}>
                   Detailed Records <span style={{ fontWeight: 400, fontSize: 13, color: "var(--text-muted)" }}>({rows.length} total)</span>
                 </h3>
-                <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid var(--border)" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid var(--border)", WebkitOverflowScrolling: "touch" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: "600px" }}>
                     <thead>
                       <tr style={{ backgroundColor: "var(--bg-secondary)" }}>
                         {cols.map(col => (
-                          <th key={col} style={{ padding: "10px 14px", textAlign: "left", color: "var(--text-muted)", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>
+                          <th key={col} style={{ padding: "12px 14px", textAlign: "left", color: "var(--text-muted)", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>
                             {col.replace(/([A-Z])/g, " $1").trim()}
                           </th>
                         ))}
@@ -1094,7 +1098,7 @@ export default function AnalyticsTab({
                       {rows.slice(0, 25).map((row, i) => (
                         <tr key={i} style={{ borderBottom: "1px solid var(--border)", backgroundColor: i % 2 === 0 ? "transparent" : "var(--bg-secondary)" }}>
                           {cols.map(col => (
-                            <td key={col} style={{ padding: "9px 14px", color: "var(--text)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <td key={col} style={{ padding: "10px 14px", color: "var(--text)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {fmt(row[col])}
                             </td>
                           ))}
@@ -1103,7 +1107,7 @@ export default function AnalyticsTab({
                     </tbody>
                   </table>
                   {rows.length > 25 && (
-                    <div style={{ padding: "10px 14px", fontSize: 12, color: "var(--text-muted)", borderTop: "1px solid var(--border)" }}>
+                    <div style={{ padding: "12px 14px", fontSize: 13, color: "var(--text-muted)", borderTop: "1px solid var(--border)" }}>
                       Showing 25 of {rows.length} records — export CSV to see all
                     </div>
                   )}
@@ -1114,8 +1118,8 @@ export default function AnalyticsTab({
         </SectionCard>
       )}
 
-        </div>{/* end right column */}
-      </div>{/* end grid */}
+        </div>{/* end report content */}
+      </div>{/* end main layout */}
     </div>
   );
 }

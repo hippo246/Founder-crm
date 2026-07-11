@@ -36,6 +36,163 @@ const COLLECTION_MAP = {
 
 export const getCollectionName = (key) => COLLECTION_MAP[key] || null;
 
+// ─── Offline Sync Queue ───────────────────────────────────────────────────────
+
+const OFFLINE_QUEUE_KEY = "offline_sync_queue";
+
+const loadOfflineQueue = () => {
+  try {
+    const queue = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    return queue ? JSON.parse(queue) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveOfflineQueue = (queue) => {
+  try {
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+  } catch {}
+};
+
+const addToOfflineQueue = (operation) => {
+  const queue = loadOfflineQueue();
+  queue.push({
+    ...operation,
+    id: Date.now().toString(),
+    timestamp: new Date().toISOString()
+  });
+  saveOfflineQueue(queue);
+};
+
+const removeFromOfflineQueue = (operationId) => {
+  const queue = loadOfflineQueue();
+  const filtered = queue.filter(op => op.id !== operationId);
+  saveOfflineQueue(filtered);
+};
+
+// ─── Process Offline Queue ─────────────────────────────────────────────────────
+
+const processOfflineQueue = async () => {
+  if (!isFirebaseConfigured()) return;
+  
+  const queue = loadOfflineQueue();
+  if (queue.length === 0) return;
+
+  console.log(`[sync] Processing ${queue.length} offline operations`);
+
+  for (const operation of queue) {
+    try {
+      switch (operation.type) {
+        case "saveCollection":
+          await syncSaveCollectionInternal(
+            operation.workspaceId,
+            operation.key,
+            operation.items
+          );
+          break;
+        case "deleteItem":
+          await syncDeleteItemInternal(
+            operation.workspaceId,
+            operation.key,
+            operation.itemId
+          );
+          break;
+        case "addAuditLog":
+          await syncAddAuditLogInternal(
+            operation.workspaceId,
+            operation.entry
+          );
+          break;
+      }
+      removeFromOfflineQueue(operation.id);
+    } catch (err) {
+      console.warn(`[sync] Failed to process operation ${operation.id}:`, err);
+      break; // Stop processing on failure
+    }
+  }
+};
+
+// ─── Network Status Listeners ──────────────────────────────────────────────────
+
+let isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+
+const initNetworkListeners = () => {
+  if (typeof window === "undefined") return;
+
+  window.addEventListener("online", () => {
+    console.log("[sync] Back online - processing queue");
+    isOnline = true;
+    processOfflineQueue();
+  });
+
+  window.addEventListener("offline", () => {
+    console.log("[sync] Offline - operations will be queued");
+    isOnline = false;
+  });
+};
+
+initNetworkListeners();
+
+// ─── Helper to sanitize data for Firestore ─────────────────────────────────────
+
+const sanitizeForFirestore = (data) => {
+  if (data === null || data === undefined) return null;
+  if (Array.isArray(data)) return data.map(sanitizeForFirestore);
+  if (typeof data === 'object') {
+    const sanitized = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value === undefined) continue; // Skip undefined fields
+      sanitized[key] = sanitizeForFirestore(value);
+    }
+    return sanitized;
+  }
+  return data;
+};
+
+// ─── Internal Sync Functions (don't use queue) ─────────────────────────────────
+
+const syncSaveCollectionInternal = async (workspaceId, key, items) => {
+  if (!isFirebaseConfigured() || !workspaceId || !Array.isArray(items)) return;
+  const colName = getCollectionName(key);
+  if (!colName) return;
+
+  const colRef = collection(db, "workspaces", workspaceId, colName);
+
+  // Batch writes — Firestore allows max 500 per batch
+  const BATCH_SIZE = 400;
+  for (let i = 0; i < items.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db);
+    const chunk = items.slice(i, i + BATCH_SIZE);
+    for (const item of chunk) {
+      if (!item || !item.id) continue;
+      const ref = doc(colRef, item.id);
+      const sanitizedItem = sanitizeForFirestore(item);
+      batch.set(ref, { ...sanitizedItem, _synced: true, _syncedAt: new Date().toISOString() }, { merge: true });
+    }
+    await batch.commit();
+  }
+};
+
+const syncDeleteItemInternal = async (workspaceId, key, itemId) => {
+  if (!isFirebaseConfigured() || !workspaceId || !itemId) return;
+  const colName = getCollectionName(key);
+  if (!colName) return;
+
+  await deleteDoc(doc(db, "workspaces", workspaceId, colName, itemId));
+};
+
+const syncAddAuditLogInternal = async (workspaceId, entry) => {
+  if (!isFirebaseConfigured() || !workspaceId) return;
+  const auditRef = collection(db, "workspaces", workspaceId, "auditLogs");
+  const sanitizedEntry = sanitizeForFirestore(entry);
+  await addDoc(auditRef, {
+    ...sanitizedEntry,
+    _synced: true,
+    timestamp: entry.ts || new Date().toISOString(),
+  });
+};
+
 // ─── Write array → Firestore subcollection (batch) ───────────────────────────
 
 export const syncSaveCollection = async (workspaceId, key, items) => {
@@ -44,22 +201,24 @@ export const syncSaveCollection = async (workspaceId, key, items) => {
   if (!colName) return;
 
   try {
-    const colRef = collection(db, "workspaces", workspaceId, colName);
-
-    // Batch writes — Firestore allows max 500 per batch
-    const BATCH_SIZE = 400;
-    for (let i = 0; i < items.length; i += BATCH_SIZE) {
-      const batch = writeBatch(db);
-      const chunk = items.slice(i, i + BATCH_SIZE);
-      for (const item of chunk) {
-        if (!item || !item.id) continue;
-        const ref = doc(colRef, item.id);
-        batch.set(ref, { ...item, _synced: true, _syncedAt: new Date().toISOString() }, { merge: true });
-      }
-      await batch.commit();
+    if (isOnline) {
+      await syncSaveCollectionInternal(workspaceId, key, items);
+    } else {
+      addToOfflineQueue({
+        type: "saveCollection",
+        workspaceId,
+        key,
+        items
+      });
     }
   } catch (err) {
-    console.warn(`[sync] Failed to save ${key} to Firestore:`, err.message);
+    console.warn(`[sync] Failed to save ${key} to Firestore, queuing for later:`, err.message);
+    addToOfflineQueue({
+      type: "saveCollection",
+      workspaceId,
+      key,
+      items
+    });
   }
 };
 
@@ -88,9 +247,24 @@ export const syncDeleteItem = async (workspaceId, key, itemId) => {
   if (!colName) return;
 
   try {
-    await deleteDoc(doc(db, "workspaces", workspaceId, colName, itemId));
+    if (isOnline) {
+      await syncDeleteItemInternal(workspaceId, key, itemId);
+    } else {
+      addToOfflineQueue({
+        type: "deleteItem",
+        workspaceId,
+        key,
+        itemId
+      });
+    }
   } catch (err) {
-    console.warn(`[sync] Failed to delete ${key}/${itemId}:`, err.message);
+    console.warn(`[sync] Failed to delete ${key}/${itemId}, queuing for later:`, err.message);
+    addToOfflineQueue({
+      type: "deleteItem",
+      workspaceId,
+      key,
+      itemId
+    });
   }
 };
 
@@ -122,14 +296,22 @@ export const subscribeToCollection = (workspaceId, key, setter) => {
 export const syncAddAuditLog = async (workspaceId, entry) => {
   if (!isFirebaseConfigured() || !workspaceId) return;
   try {
-    const auditRef = collection(db, "workspaces", workspaceId, "auditLogs");
-    await addDoc(auditRef, {
-      ...entry,
-      _synced: true,
-      timestamp: entry.ts || new Date().toISOString(),
-    });
+    if (isOnline) {
+      await syncAddAuditLogInternal(workspaceId, entry);
+    } else {
+      addToOfflineQueue({
+        type: "addAuditLog",
+        workspaceId,
+        entry
+      });
+    }
   } catch (err) {
-    console.warn("[sync] Failed to write audit log to Firestore:", err.message);
+    console.warn("[sync] Failed to write audit log to Firestore, queuing for later:", err.message);
+    addToOfflineQueue({
+      type: "addAuditLog",
+      workspaceId,
+      entry
+    });
   }
 };
 
@@ -148,6 +330,11 @@ export const hydrateFromFirestore = async (workspaceId) => {
       results[key] = items;
     }
   }));
+
+  // After hydrating, process any offline operations
+  if (isOnline) {
+    processOfflineQueue();
+  }
 
   return results;
 };

@@ -275,6 +275,10 @@ function DocEditor({ doc, onClose, onSave, contacts=[], workspaceId="", onSaveAs
   // Local doc state (workflows mutate without closing editor)
   const [localDoc, setLocalDoc] = useState(doc);
 
+  // Editor theme (dark/light)
+  const [localEditorTheme, setLocalEditorTheme] = useState(() => { try { return localStorage.getItem(`doc-editor-theme`) || "light"; } catch { return "light"; } });
+  useEffect(() => { try { localStorage.setItem(`doc-editor-theme`, localEditorTheme); } catch {} }, [localEditorTheme]);
+
   // Status bar
   const [wordCount, setWordCount]   = useState(0);
   const [lastSaved, setLastSaved]   = useState(doc.lastSavedAt || null);
@@ -326,6 +330,56 @@ function DocEditor({ doc, onClose, onSave, contacts=[], workspaceId="", onSaveAs
     return () => clearInterval(autoSaveRef.current);
   }, [isDirty, doSave]);
 
+  // ── TOC generator ───────────────────────────────────────────────────────────
+  const generateTOC = () => {
+    const el = editorRef.current;
+    if (!el) return;
+    const headings = el.querySelectorAll("h1,h2,h3");
+    if (headings.length === 0) { toast("No headings found — add H1/H2/H3 to generate TOC","info"); return; }
+    let toc = `<div style="border:1px solid #ddd;padding:14px 18px;border-radius:6px;margin-bottom:20px;background:#f9f9f9"><strong style="font-size:13px;text-transform:uppercase;letter-spacing:0.05em">Table of Contents</strong><ol style="margin:8px 0 0;padding-left:18px;font-size:13px;line-height:2">`;
+    headings.forEach((h, i) => {
+      const id = `toc-heading-${i}`;
+      h.id = id;
+      const level = parseInt(h.tagName[1]);
+      const indent = level > 1 ? `margin-left:${(level-1)*14}px;` : "";
+      toc += `<li style="${indent}"><a href="#${id}" style="color:#6c63ff;text-decoration:none">${h.innerText}</a></li>`;
+    });
+    toc += `</ol></div>`;
+    exec("insertHTML", toc);
+    toast("Table of contents inserted");
+  };
+
+  // ── Insert page break ──────────────────────────────────────────────────────
+  const insertPageBreak = () => {
+    exec("insertHTML", `<div style="page-break-after:always;border-top:2px dashed #ccc;margin:20px 0;text-align:center;color:#999;font-size:11px;padding:6px 0">— Page Break —</div>`);
+  };
+
+  // ── Cover page ─────────────────────────────────────────────────────────────
+  const [showCoverPageModal, setShowCoverPageModal] = useState(false);
+  const [coverSettings, setCoverSettings] = useState({ logo:"", company:"", subtitle:"", accentColor:"#6c63ff" });
+
+  const insertCoverPage = (settings) => {
+    const html = `<div style="page-break-after:always;min-height:500px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:linear-gradient(135deg,${settings.accentColor}11 0%,${settings.accentColor}22 100%);border-radius:8px;padding:40px 32px;margin-bottom:24px;border:2px solid ${settings.accentColor}33">
+      ${settings.logo ? `<img src="${settings.logo}" style="max-height:70px;margin-bottom:24px;object-fit:contain" alt="Logo"/>` : `<div style="width:60px;height:60px;border-radius:50%;background:${settings.accentColor};margin-bottom:24px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;font-weight:900">${(localDoc.name||"D")[0]}</div>`}
+      ${settings.company ? `<div style="font-size:12px;letter-spacing:0.15em;text-transform:uppercase;color:${settings.accentColor};font-weight:700;margin-bottom:8px">${settings.company}</div>` : ""}
+      <h1 style="font-size:28px;font-weight:900;color:#111;margin:0 0 12px;border:none;padding:0">${localDoc.name}</h1>
+      ${settings.subtitle ? `<p style="font-size:14px;color:#666;margin:0 0 16px">${settings.subtitle}</p>` : ""}
+      <div style="font-size:12px;color:#999;margin-top:20px;border-top:1px solid #ddd;padding-top:14px;width:100%">
+        ${localDoc.type ? `<span>${localDoc.type}</span> &nbsp;|&nbsp; ` : ""}
+        <span>${new Date().toLocaleDateString()}</span>
+        ${localDoc.relatedClient ? ` &nbsp;|&nbsp; <span>Prepared for: ${localDoc.relatedClient}</span>` : ""}
+        ${localDoc.status ? ` &nbsp;|&nbsp; <span style="font-weight:600;color:${settings.accentColor}">${localDoc.status}</span>` : ""}
+      </div>
+    </div>`;
+    if (editorRef.current) {
+      editorRef.current.innerHTML = html + (editorRef.current.innerHTML || "");
+      setIsDirty(true);
+      recalcWords();
+    }
+    setShowCoverPageModal(false);
+    toast("Cover page inserted at top");
+  };
+
   // ── Print ───────────────────────────────────────────────────────────────────
   const handlePrint = () => {
     const wm = localDoc.watermark;
@@ -335,18 +389,29 @@ function DocEditor({ doc, onClose, onSave, contacts=[], workspaceId="", onSaveAs
         text-transform:uppercase;letter-spacing:0.1em;pointer-events:none;z-index:1000;white-space:nowrap;}
       @media print{.watermark{position:fixed;}}` : "";
     const wmHtml = wm?.enabled ? `<div class="watermark">${wm.text||"DRAFT"}</div>` : "";
+    const hdrText = localDoc.printHeader || "";
+    const ftrText = localDoc.printFooter || `${localDoc.name} — ${localDoc.status} — ${new Date().toLocaleDateString()}`;
+    const brandColor = localDoc.brandColor || "#333";
     const win = window.open("", "_blank");
     win.document.write(`<!DOCTYPE html><html><head><title>${localDoc.name}</title><style>
       body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:0 24px;color:#111;line-height:1.6;position:relative;}
-      h1{font-size:22px;border-bottom:2px solid #333;padding-bottom:8px}
+      h1{font-size:22px;border-bottom:2px solid ${brandColor};padding-bottom:8px;color:${brandColor}}
+      h2{font-size:17px;color:${brandColor}} h3{font-size:14px;color:${brandColor}}
       .meta{font-size:12px;color:#666;margin-bottom:24px}
       table{border-collapse:collapse;width:100%} td,th{border:1px solid #ccc;padding:6px 10px}
-      @media print{body{margin:0}}${wmStyle}
+      @page{margin:20mm} @media print{body{margin:0}}
+      .print-header{position:fixed;top:0;left:0;right:0;padding:8px 20px;border-bottom:2px solid ${brandColor};font-size:11px;color:#666;display:flex;justify-content:space-between;background:#fff;}
+      .print-footer{position:fixed;bottom:0;left:0;right:0;padding:8px 20px;border-top:1px solid #ddd;font-size:11px;color:#666;display:flex;justify-content:space-between;background:#fff;}
+      .print-footer .page-num:after{content:counter(page);}
+      @media print{.print-header,.print-footer{position:fixed;} body{padding-top:40px;padding-bottom:40px;}}
+      ${wmStyle}
     </style></head><body>
       ${wmHtml}
+      ${hdrText ? `<div class="print-header"><span>${hdrText}</span><span>${localDoc.relatedClient||""}</span></div>` : ""}
       <h1>${localDoc.name}</h1>
       <div class="meta">Type: ${localDoc.type} &nbsp;|&nbsp; Status: ${localDoc.status}${localDoc.relatedClient ? ` &nbsp;|&nbsp; Client: ${localDoc.relatedClient}` : ""}${localDoc.expiresAt ? ` &nbsp;|&nbsp; Expires: ${localDoc.expiresAt}` : ""}</div>
       ${editorRef.current?.innerHTML || ""}
+      <div class="print-footer"><span>${ftrText}</span><span class="page-num">Page </span></div>
     </body></html>`);
     win.document.close();
     win.focus();
@@ -442,6 +507,37 @@ function DocEditor({ doc, onClose, onSave, contacts=[], workspaceId="", onSaveAs
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"80vh", position:"relative" }}>
 
+      {/* ── Cover page modal ── */}
+      {showCoverPageModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={()=>setShowCoverPageModal(false)}>
+          <div style={{ background:"var(--card,var(--surface))", borderRadius:14, padding:24, boxShadow:"0 8px 32px rgba(0,0,0,0.22)", maxWidth:440, width:"95vw" }} onClick={e=>e.stopPropagation()}>
+            <div style={{ fontWeight:700, fontSize:16, marginBottom:14 }}>🎨 Insert Cover Page</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:11 }}>
+              <div>
+                <label style={{ fontSize:12, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:4 }}>Company name (optional)</label>
+                <input value={coverSettings.company} onChange={e=>setCoverSettings(p=>({...p,company:e.target.value}))} placeholder="Your Company" style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", fontSize:13, boxSizing:"border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize:12, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:4 }}>Subtitle / tagline (optional)</label>
+                <input value={coverSettings.subtitle} onChange={e=>setCoverSettings(p=>({...p,subtitle:e.target.value}))} placeholder="Prepared for…" style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", fontSize:13, boxSizing:"border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize:12, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:4 }}>Logo URL (optional)</label>
+                <input value={coverSettings.logo} onChange={e=>setCoverSettings(p=>({...p,logo:e.target.value}))} placeholder="https://…/logo.png" style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", fontSize:13, boxSizing:"border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize:12, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:4 }}>Accent color</label>
+                <input type="color" value={coverSettings.accentColor} onChange={e=>setCoverSettings(p=>({...p,accentColor:e.target.value}))} style={{ width:60, height:36, padding:2, border:"1px solid var(--border)", borderRadius:6, cursor:"pointer", background:"var(--surface)" }} />
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:18, paddingTop:12, borderTop:"1px solid var(--border)" }}>
+              <button onClick={()=>setShowCoverPageModal(false)} style={{ padding:"7px 16px", borderRadius:7, border:"1px solid var(--border)", background:"transparent", color:"var(--text-muted)", cursor:"pointer", fontSize:13 }}>Cancel</button>
+              <button onClick={()=>insertCoverPage(coverSettings)} style={{ padding:"7px 20px", borderRadius:7, border:"none", background:"var(--accent,#6c63ff)", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>🎨 Insert Cover</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Toolbar row 1: font controls ── */}
       <div style={{ display:"flex", flexWrap:"wrap", gap:4, padding:"6px 0 5px", borderBottom:"1px solid var(--border)", alignItems:"center" }}>
         {/* Font family */}
@@ -481,6 +577,11 @@ function DocEditor({ doc, onClose, onSave, contacts=[], workspaceId="", onSaveAs
         </label>
         <div style={{ marginLeft:"auto", display:"flex", gap:5, alignItems:"center" }}>
           {onSaveAsTemplate && <button onClick={onSaveAsTemplate} style={{ padding:"3px 10px", borderRadius:6, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", cursor:"pointer", fontWeight:600, fontSize:12 }}>📄 Save as Template</button>}
+          {/* Dark/light theme toggle */}
+          <button title="Toggle editor theme" onClick={() => { const next = localEditorTheme === "light" ? "dark" : "light"; setLocalEditorTheme(next); }}
+            style={{ padding:"3px 8px", borderRadius:6, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", cursor:"pointer", fontWeight:600, fontSize:12 }}>
+            {localEditorTheme === "light" ? "🌙 Dark" : "☀ Light"}
+          </button>
           <button onClick={handlePrint} style={{ padding:"3px 10px", borderRadius:6, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", cursor:"pointer", fontWeight:600, fontSize:12 }}>🖨 Print</button>
           <button onClick={()=>doSave(false)} style={{ padding:"3px 12px", borderRadius:6, border:"none", background:"var(--accent,#6c63ff)", color:"#fff", cursor:"pointer", fontWeight:700, fontSize:12 }}>💾 Save</button>
           <button onClick={onClose} style={{ padding:"3px 9px", borderRadius:6, border:"1px solid var(--border)", background:"transparent", color:"var(--text-muted)", cursor:"pointer", fontSize:12 }}>✕</button>
@@ -515,6 +616,13 @@ function DocEditor({ doc, onClose, onSave, contacts=[], workspaceId="", onSaveAs
         {tbBtn("↩ Undo", ()=>exec("undo"), "Undo")}
         {tbBtn("↪ Redo", ()=>exec("redo"), "Redo")}
         {tbSep()}
+        {tbBtn("📑 TOC", generateTOC, "Insert table of contents from headings")}
+        {tbBtn("⬛ Break", insertPageBreak, "Insert page break")}
+        <button title="Insert cover page" onMouseDown={e=>e.preventDefault()} onClick={()=>setShowCoverPageModal(true)}
+          style={{ padding:"3px 8px", borderRadius:4, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", cursor:"pointer", fontSize:13, lineHeight:1.4, whiteSpace:"nowrap" }}>
+          🎨 Cover
+        </button>
+        {tbSep()}
         {/* Version history toggle */}
         <button title="Version history" onMouseDown={e=>e.preventDefault()} onClick={()=>{setShowHistory(v=>!v);setPreviewVer(null);}}
           style={{ padding:"3px 8px", borderRadius:4, border:`1px solid ${showHistory?"var(--accent,#6c63ff)":"var(--border)"}`, background: showHistory?"var(--accent-muted,rgba(108,99,255,0.1))":"var(--surface)", color:"var(--text)", cursor:"pointer", fontSize:13, lineHeight:1.4, whiteSpace:"nowrap" }}>
@@ -537,7 +645,10 @@ function DocEditor({ doc, onClose, onSave, contacts=[], workspaceId="", onSaveAs
           suppressContentEditableWarning
           onInput={handleInput}
           dangerouslySetInnerHTML={{ __html: doc.editorContent || (doc.notes||"").replace(/\n/g,"<br/>") }}
-          style={{ flex:1, overflowY:"auto", padding:"16px 20px", border:"1px solid var(--border)", borderRadius:8, background:"var(--surface)", color:"var(--text)", outline:"none", fontSize:14, lineHeight:1.8, minHeight:0, marginRight: showHistory ? 324 : 0, transition:"margin-right 0.2s" }}
+          style={{ flex:1, overflowY:"auto", padding:"16px 20px", border:"1px solid var(--border)", borderRadius:8,
+            background: localEditorTheme === "dark" ? "#1a1a2e" : "var(--surface)",
+            color: localEditorTheme === "dark" ? "#e2e8f0" : "var(--text)",
+            outline:"none", fontSize:14, lineHeight:1.8, minHeight:0, marginRight: showHistory ? 324 : 0, transition:"margin-right 0.2s,background 0.2s,color 0.2s" }}
         />
         {showHistory && <HistoryPanel />}
       </div>
@@ -591,6 +702,30 @@ function DocEditor({ doc, onClose, onSave, contacts=[], workspaceId="", onSaveAs
           style={{ padding:"3px 10px", borderRadius:6, border:`1px solid ${(localDoc.comments||[]).length?"#3b82f6":"var(--border)"}`, background: (localDoc.comments||[]).length?"rgba(59,130,246,0.08)":"var(--surface)", color:"var(--text)", cursor:"pointer", fontSize:12, fontWeight:600 }}>
           💬 Comments {(localDoc.comments||[]).length > 0 && <span style={{ fontSize:10, background:"#3b82f6", color:"#fff", borderRadius:999, padding:"0 4px", marginLeft:2 }}>{localDoc.comments.length}</span>}
         </button>
+        {/* Print settings: header/footer/brand color */}
+        <details style={{ display:"inline-flex", alignItems:"center", position:"relative" }}>
+          <summary style={{ padding:"3px 10px", borderRadius:6, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", cursor:"pointer", fontSize:12, fontWeight:600, listStyle:"none", userSelect:"none" }}>🖨 Print setup</summary>
+          <div style={{ position:"absolute", bottom:"calc(100% + 6px)", left:0, background:"var(--card,var(--surface))", border:"1px solid var(--border)", borderRadius:9, padding:14, zIndex:60, minWidth:300, boxShadow:"0 4px 18px rgba(0,0,0,0.15)" }}>
+            <div style={{ fontSize:12, fontWeight:700, marginBottom:10, color:"var(--text)" }}>Print / PDF Settings</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
+              <div>
+                <label style={{ fontSize:11, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:3 }}>Page header text</label>
+                <input value={localDoc.printHeader||""} onChange={e=>setLocalDoc(p=>({...p,printHeader:e.target.value}))} placeholder="e.g. CONFIDENTIAL" style={{ width:"100%", padding:"5px 8px", borderRadius:5, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", fontSize:12, boxSizing:"border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize:11, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:3 }}>Page footer text</label>
+                <input value={localDoc.printFooter||""} onChange={e=>setLocalDoc(p=>({...p,printFooter:e.target.value}))} placeholder={`${localDoc.name} — page number auto-added`} style={{ width:"100%", padding:"5px 8px", borderRadius:5, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", fontSize:12, boxSizing:"border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize:11, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:3 }}>Brand color (headings & borders)</label>
+                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                  <input type="color" value={localDoc.brandColor||"#333333"} onChange={e=>setLocalDoc(p=>({...p,brandColor:e.target.value}))} style={{ width:40, height:30, padding:2, border:"1px solid var(--border)", borderRadius:5, cursor:"pointer", background:"var(--surface)" }} />
+                  <span style={{ fontSize:11, color:"var(--text-muted)" }}>Applied to headings in print output</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
 
       {/* ── Workflow modals ── */}
@@ -1508,7 +1643,7 @@ function PasswordGate({ doc, onUnlock, onCancel }) {
 const SUSPICIOUS_EXTENSIONS = [".exe",".bat",".cmd",".scr",".vbs",".js",".jar",".msi",".com",".pif",".reg",".ps1",".sh",".dmg",".app"];
 const FOLDER_OPTIONS = ["General","Contracts","Invoices","References","Signed Copies","Media","Other"];
 
-function FileUploader({ attachments=[], onChange, signedReturn=null, onSignedReturn=null }) {
+function FileUploader({ attachments=[], onChange, signedReturn=null, onSignedReturn=null, canDownload=true }) {
   const inputRef      = useRef(null);
   const signedRef     = useRef(null);
   const cloudUrlRef   = useRef(null);
@@ -1719,7 +1854,8 @@ function FileUploader({ attachments=[], onChange, signedReturn=null, onSignedRet
                   {FOLDER_OPTIONS.map(f=><option key={f} value={f}>{f}</option>)}
                 </select>
                 {!a.cloudType && <button onClick={()=>setViewing(a)} style={{ padding:"3px 8px", borderRadius:5, border:"1px solid var(--border)", background:"transparent", color:"var(--text)", cursor:"pointer", fontSize:12 }}>👁 View</button>}
-                {!a.cloudType && <a href={a.dataUrl} download={a.name} style={{ padding:"3px 8px", borderRadius:5, border:"1px solid var(--border)", background:"transparent", color:"var(--text)", cursor:"pointer", fontSize:12, textDecoration:"none" }}>⬇ Save</a>}
+                {!a.cloudType && canDownload && <a href={a.dataUrl} download={a.name} style={{ padding:"3px 8px", borderRadius:5, border:"1px solid var(--border)", background:"transparent", color:"var(--text)", cursor:"pointer", fontSize:12, textDecoration:"none" }}>⬇ Save</a>}
+                {!a.cloudType && !canDownload && <span style={{ padding:"3px 8px", borderRadius:5, border:"1px solid var(--border)", background:"transparent", color:"var(--text-muted)", fontSize:12, cursor:"not-allowed" }} title="Download disabled for your role">⬇ Save</span>}
                 <button onClick={()=>removeFile(a.id)} style={{ padding:"3px 8px", borderRadius:5, border:"none", background:"transparent", color:"var(--danger,#ef4444)", cursor:"pointer", fontSize:12 }}>✕</button>
               </div>
             </div>
@@ -1734,7 +1870,10 @@ function FileUploader({ attachments=[], onChange, signedReturn=null, onSignedRet
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
               <span style={{ fontWeight:700, fontSize:15 }}>{viewing.name}</span>
               <div style={{ display:"flex", gap:8 }}>
-                <a href={viewing.dataUrl} download={viewing.name} style={{ padding:"4px 12px", borderRadius:6, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", textDecoration:"none", fontSize:13 }}>⬇ Download</a>
+                {canDownload
+                  ? <a href={viewing.dataUrl} download={viewing.name} style={{ padding:"4px 12px", borderRadius:6, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", textDecoration:"none", fontSize:13 }}>⬇ Download</a>
+                  : <span style={{ padding:"4px 12px", borderRadius:6, border:"1px solid var(--border)", background:"transparent", color:"var(--text-muted)", fontSize:13, cursor:"not-allowed" }} title="Download disabled for your role">⬇ Download</span>
+                }
                 <button onClick={()=>setViewing(null)} style={{ padding:"4px 10px", borderRadius:6, border:"1px solid var(--border)", background:"transparent", color:"var(--text-muted)", cursor:"pointer" }}>✕</button>
               </div>
             </div>
@@ -1746,7 +1885,10 @@ function FileUploader({ attachments=[], onChange, signedReturn=null, onSignedRet
               <div style={{ padding:24, textAlign:"center", color:"var(--text-muted)", fontSize:14 }}>
                 <div style={{ fontSize:48, marginBottom:10 }}>📄</div>
                 <div>Preview not available for this file type.</div>
-                <a href={viewing.dataUrl} download={viewing.name} style={{ display:"inline-block", marginTop:12, padding:"8px 20px", borderRadius:7, background:"var(--accent,#6c63ff)", color:"#fff", textDecoration:"none", fontWeight:600 }}>⬇ Download to open</a>
+                {canDownload
+                  ? <a href={viewing.dataUrl} download={viewing.name} style={{ display:"inline-block", marginTop:12, padding:"8px 20px", borderRadius:7, background:"var(--accent,#6c63ff)", color:"#fff", textDecoration:"none", fontWeight:600 }}>⬇ Download to open</a>
+                  : <span style={{ display:"inline-block", marginTop:12, padding:"8px 20px", borderRadius:7, background:"var(--border)", color:"var(--text-muted)", cursor:"not-allowed", fontWeight:600 }} title="Download disabled for your role">⬇ Download disabled</span>
+                }
               </div>
             )}
           </div>
@@ -3198,6 +3340,116 @@ function RelationshipsModal({ doc, documents, onClose, onUpdate, onOpenTimeline 
   );
 }
 
+// ── CameraScanner ─────────────────────────────────────────────────────────────
+function CameraScanner({ onCapture, onClose }) {
+  const videoRef  = useRef(null);
+  const canvasRef = useRef(null);
+  const [stream, setStream]     = useState(null);
+  const [captured, setCaptured] = useState(null);
+  const [error, setError]       = useState(null);
+  const [fileName, setFileName] = useState("scanned-document.png");
+
+  useEffect(() => {
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: { ideal: "environment" } } })
+      .then(s => { setStream(s); if (videoRef.current) videoRef.current.srcObject = s; })
+      .catch(() => setError("Camera access denied or unavailable. Upload a file instead."));
+    return () => { stream?.getTracks().forEach(t => t.stop()); };
+  }, []);
+
+  const snap = () => {
+    const video  = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL("image/png");
+    setCaptured(dataUrl);
+    stream?.getTracks().forEach(t => t.stop());
+  };
+
+  const attach = () => {
+    if (!captured) return;
+    // Convert data URL to a File-like attachment object
+    const att = {
+      id: Math.random().toString(36).slice(2),
+      name: fileName,
+      type: "image/png",
+      dataUrl: captured,
+      size: Math.round(captured.length * 0.75),
+      uploadedAt: new Date().toISOString(),
+      folder: "General",
+    };
+    onCapture(att);
+    onClose();
+  };
+
+  const retake = () => {
+    setCaptured(null);
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: { ideal: "environment" } } })
+      .then(s => { setStream(s); if (videoRef.current) videoRef.current.srcObject = s; })
+      .catch(() => setError("Camera unavailable."));
+  };
+
+  // Fallback: file upload
+  const fileInput = useRef(null);
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setCaptured(ev.target.result);
+    reader.readAsDataURL(file);
+    setFileName(file.name);
+  };
+
+  return (
+    <div style={{ minWidth: 340 }}>
+      {error ? (
+        <div style={{ padding: "16px 0", textAlign:"center", color:"var(--text-muted)", fontSize:13 }}>
+          <div style={{ fontSize:32, marginBottom:8 }}>📷</div>
+          {error}
+          <br/><br/>
+          <label style={{ padding:"6px 16px", borderRadius:7, background:"var(--accent,#6c63ff)", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>
+            📁 Upload image instead
+            <input type="file" accept="image/*" style={{ display:"none" }} ref={fileInput} onChange={handleFileSelect} />
+          </label>
+        </div>
+      ) : captured ? (
+        <div>
+          <img src={captured} alt="Scanned" style={{ width:"100%", borderRadius:8, marginBottom:12, border:"1px solid var(--border)" }} />
+          <div style={{ marginBottom:10 }}>
+            <label style={{ fontSize:12, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:4 }}>File name</label>
+            <input value={fileName} onChange={e=>setFileName(e.target.value)}
+              style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", fontSize:13, boxSizing:"border-box" }} />
+          </div>
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+            <button onClick={retake} style={{ padding:"7px 14px", borderRadius:7, border:"1px solid var(--border)", background:"transparent", color:"var(--text-muted)", cursor:"pointer", fontSize:13 }}>🔄 Retake</button>
+            <button onClick={attach} style={{ padding:"7px 18px", borderRadius:7, border:"none", background:"var(--accent,#6c63ff)", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>📎 Attach to document</button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <video ref={videoRef} autoPlay playsInline muted style={{ width:"100%", borderRadius:8, background:"#000", marginBottom:10, maxHeight:300, objectFit:"cover" }} />
+          <canvas ref={canvasRef} style={{ display:"none" }} />
+          <div style={{ display:"flex", gap:8, justifyContent:"center", flexWrap:"wrap" }}>
+            <button onClick={snap} style={{ padding:"9px 24px", borderRadius:7, border:"none", background:"var(--accent,#6c63ff)", color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>📸 Capture</button>
+            <label style={{ padding:"9px 16px", borderRadius:7, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", fontWeight:600, fontSize:13, cursor:"pointer" }}>
+              📁 Upload instead
+              <input type="file" accept="image/*" style={{ display:"none" }} onChange={handleFileSelect} />
+            </label>
+          </div>
+          <div style={{ marginTop:8, fontSize:11, color:"var(--text-muted)", textAlign:"center" }}>Point your camera at a physical document and tap Capture.</div>
+        </div>
+      )}
+      {captured && (
+        <div>
+          <canvas ref={canvasRef} style={{ display:"none" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── TimelineModal ──────────────────────────────────────────────────────────────
 function TimelineModal({ client, documents, onClose, onDocClick }) {
   const docs = (documents||[]).filter(d => d.relatedClient === client).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
@@ -3247,7 +3499,7 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
   const [showColMenu, setShowColMenu] = useState(false);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [viewMode, setViewMode] = useState("table"); // "table" | "cards"
+  const [viewMode, setViewMode] = useState("table"); // "table" | "cards" | "kanban" | "calendar" | "portal" | "archive"
   const [viewingDoc, setViewingDoc] = useState(null); // slide-in preview panel
   const [templateInitial, setTemplateInitial] = useState(null);
   const [editingDoc, setEditingDoc] = useState(null);   // open DocEditor
@@ -3286,6 +3538,88 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
   const [relationshipsDoc, setRelationshipsDoc] = useState(null);
   const [timelineClient, setTimelineClient]     = useState(null);
 
+  // ── Starred / pinned ─────────────────────────────────────────────────────
+  const [starred, setStarred] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(`doc-starred-${workspaceId}`) || "[]")); } catch { return new Set(); } });
+
+  // ── Security state ────────────────────────────────────────────────────────
+  const [twoFaDoc, setTwoFaDoc]           = useState(null);   // doc pending 2FA unlock
+  const [twoFaCode, setTwoFaCode]         = useState("");
+  const [twoFaError, setTwoFaError]       = useState(false);
+  const [unlockedSensitive, setUnlockedSensitive] = useState(new Set()); // doc IDs unlocked via 2FA
+  const SENSITIVE_TYPES = ["NDA", "Contract"];
+  const DOWNLOAD_ALLOWED_ROLES = ["Owner", "Admin", "Editor"]; // "Viewer" cannot download
+  const canDownload = DOWNLOAD_ALLOWED_ROLES.includes(role);
+  const SIMULATED_2FA_CODE = "123456"; // In production this would be a real TOTP/OTP
+
+  // ── Mobile / offline state ────────────────────────────────────────────────
+  const [offlineQueue, setOfflineQueue]   = useState(() => { try { return JSON.parse(localStorage.getItem(`doc-offline-queue-${workspaceId}`) || "[]"); } catch { return []; } });
+  const [isOnline, setIsOnline]           = useState(() => navigator.onLine);
+  const [scanModal, setScanModal]         = useState(false);
+  const [scanTargetDoc, setScanTargetDoc] = useState(null);
+
+  // Track online/offline status
+  useEffect(() => {
+    const setOnline  = () => { setIsOnline(true);  syncOfflineQueue(); };
+    const setOffline = () => setIsOnline(false);
+    window.addEventListener("online",  setOnline);
+    window.addEventListener("offline", setOffline);
+    return () => { window.removeEventListener("online", setOnline); window.removeEventListener("offline", setOffline); };
+  }, []);
+
+  const syncOfflineQueue = useCallback(() => {
+    const queue = (() => { try { return JSON.parse(localStorage.getItem(`doc-offline-queue-${workspaceId}`) || "[]"); } catch { return []; } })();
+    if (!queue.length) return;
+    // Apply queued status changes
+    let docs = documents || [];
+    queue.forEach(op => {
+      if (op.type === "status") docs = docs.map(d => d.id === op.docId ? { ...d, status: op.status, updatedAt: op.at } : d);
+    });
+    setDocuments(docs);
+    saveWorkspaceData("documents", docs, workspaceId, userId).catch(() => {});
+    setOfflineQueue([]);
+    try { localStorage.removeItem(`doc-offline-queue-${workspaceId}`); } catch {}
+    toast(`✅ Synced ${queue.length} offline change${queue.length !== 1 ? "s" : ""}`);
+  }, [documents, workspaceId, userId]);
+
+  const enqueueOffline = (op) => {
+    const q = [...offlineQueue, { ...op, at: new Date().toISOString() }];
+    setOfflineQueue(q);
+    try { localStorage.setItem(`doc-offline-queue-${workspaceId}`, JSON.stringify(q)); } catch {}
+    toast("💾 Saved offline — will sync when reconnected", "info");
+  };
+
+  // Expiry auto-lock: mark docs as read-only after expiry date
+  const isExpiryLocked = (doc) => doc.expiresAt && new Date(doc.expiresAt).getTime() < Date.now();
+
+  // 2FA gate: opens 2FA prompt for sensitive doc types; calls callback if already unlocked
+  const require2FA = (doc, callback) => {
+    if (!SENSITIVE_TYPES.includes(doc.type)) { callback(); return; }
+    if (unlockedSensitive.has(doc.id)) { callback(); return; }
+    setTwoFaDoc({ doc, callback });
+    setTwoFaCode(""); setTwoFaError(false);
+  };
+
+  const confirm2FA = () => {
+    if (twoFaCode.trim() !== SIMULATED_2FA_CODE) { setTwoFaError(true); return; }
+    setUnlockedSensitive(prev => new Set([...prev, twoFaDoc.doc.id]));
+    const cb = twoFaDoc.callback;
+    setTwoFaDoc(null); setTwoFaCode(""); setTwoFaError(false);
+    cb();
+  };
+
+  // ── Bulk status change ────────────────────────────────────────────────────
+  const [showBulkStatus, setShowBulkStatus] = useState(false);
+
+  // ── Branding per-client portal ────────────────────────────────────────────
+  const [portalClient, setPortalClient] = useState("All");
+
+  // ── Cover page / print settings ──────────────────────────────────────────
+  const [showCoverPage, setShowCoverPage] = useState(false);
+  const [coverPageDoc, setCoverPageDoc] = useState(null);
+
+  // ── Editor theme ─────────────────────────────────────────────────────────
+  const [editorTheme, setEditorTheme] = useState(() => { try { return localStorage.getItem(`doc-editor-theme-${workspaceId}`) || "light"; } catch { return "light"; } });
+
   // Retention policy: auto-archive documents older than the configured window.
   useEffect(() => {
     if (!retentionDays) return;
@@ -3320,6 +3654,24 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
     saveWorkspaceData("documents", u, workspaceId, userId).catch(err => toast(`Sync failed: ${err.message}`, "info"));
   }, [documents, workspaceId]);
 
+  const toggleStar = (id) => {
+    setStarred(prev => {
+      const s = new Set(prev);
+      s.has(id) ? s.delete(id) : s.add(id);
+      try { localStorage.setItem(`doc-starred-${workspaceId}`, JSON.stringify([...s])); } catch {}
+      return s;
+    });
+  };
+
+  const bulkStatusChange = (status) => {
+    const u = (documents||[]).map(d => selected.has(d.id) ? {...d, status, updatedAt: new Date().toISOString()} : d);
+    setDocuments(u); saveWorkspaceData("documents", u, workspaceId, userId).catch(err => toast(`Sync failed: ${err.message}`, "info"));
+    addAudit("Documents","BulkStatus",`Set ${selected.size} docs → ${status}`);
+    toast(`${selected.size} documents → ${status}`);
+    setShowBulkStatus(false);
+    setSelected(new Set());
+  };
+
   const overdueCount = useMemo(() => {
     const today = new Date().toISOString().slice(0,10);
     return (documents||[]).reduce((acc, d) => acc + (d.followUps||[]).filter(f => !f.done && f.date < today).length, 0);
@@ -3328,9 +3680,13 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
   const filtered = useMemo(() => {
     const docs = (documents||[]).filter(d => {
       const q = search.toLowerCase();
+      // Archive view: only show archived
+      if (viewMode === "archive") return d.status === "Archived";
       return (!q || d.name?.toLowerCase().includes(q) || d.relatedClient?.toLowerCase().includes(q) || d.relatedProject?.toLowerCase().includes(q) || (d.tags||[]).some(t=>t.toLowerCase().includes(q)) || d.notes?.toLowerCase().includes(q) || (d.editorContent||'').replace(/<[^>]+>/g,'').toLowerCase().includes(q))
         && (filterType === "All" || d.type === filterType)
-        && (filterStatus === "All" || d.status === filterStatus);
+        && (filterStatus === "All" || d.status === filterStatus)
+        && (viewMode !== "starred" || starred.has(d.id))
+        && (viewMode === "portal" ? (portalClient === "All" || d.relatedClient === portalClient) : true);
     });
     return [...docs].sort((a,b) => {
       const av = (a[sortKey]||"").toLowerCase?.() ?? a[sortKey] ?? "";
@@ -3382,12 +3738,18 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
   };
   const bulkExport = () => { exportToCSV("documents", filtered.filter(d => selected.has(d.id))); toast("Exported selected"); };
 
-  // Inline status update
+  // Inline status update (offline-aware)
   const updateStatus = (id, status) => {
     const u = (documents||[]).map(d => d.id===id ? {...d, status, updatedAt: new Date().toISOString()} : d);
-    setDocuments(u); saveWorkspaceData("documents", u, workspaceId, userId).catch(err => toast(`Sync failed: ${err.message}`, "info"));
-    addAudit("Documents","StatusChange",`Status → ${status}`);
-    toast(`Status set to ${status}`); setInlineStatusFor(null);
+    setDocuments(u);
+    if (isOnline) {
+      saveWorkspaceData("documents", u, workspaceId, userId).catch(err => toast(`Sync failed: ${err.message}`, "info"));
+      addAudit("Documents","StatusChange",`Status → ${status}`);
+      toast(`Status set to ${status}`);
+    } else {
+      enqueueOffline({ type:"status", docId: id, status });
+    }
+    setInlineStatusFor(null);
   };
 
   // Duplicate
@@ -3439,6 +3801,71 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
     <div>
       {confirm && <Confirm msg="Delete this document?" onYes={() => del(confirm)} onNo={() => setConfirm(null)} />}
 
+      {/* ── 2FA unlock modal ── */}
+      {twoFaDoc && (
+        <Modal title={`🔐 Two-Factor Verification — ${twoFaDoc.doc.name}`} onClose={() => setTwoFaDoc(null)}>
+          <div style={{ minWidth: 340 }}>
+            <div style={{ padding:"10px 14px", borderRadius:8, background:"rgba(108,99,255,0.08)", border:"1px solid rgba(108,99,255,0.25)", fontSize:13, color:"var(--text)", marginBottom:16 }}>
+              <strong>{SENSITIVE_TYPES.includes(twoFaDoc.doc.type) ? `🔒 ${twoFaDoc.doc.type}` : twoFaDoc.doc.name}</strong> requires two-factor verification before opening.
+              <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:4 }}>Enter your 6-digit code to proceed. <em>(Demo code: 123456)</em></div>
+            </div>
+            <label style={{ fontSize:12, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:6 }}>Verification Code</label>
+            <input
+              autoFocus
+              value={twoFaCode}
+              onChange={e => { setTwoFaCode(e.target.value.replace(/\D/g,"")); setTwoFaError(false); }}
+              onKeyDown={e => e.key === "Enter" && confirm2FA()}
+              maxLength={6}
+              placeholder="••••••"
+              style={{ width:"100%", padding:"10px 14px", borderRadius:8, border:`1.5px solid ${twoFaError ? "var(--danger,#ef4444)" : "var(--border)"}`, background:"var(--surface)", color:"var(--text)", fontSize:22, letterSpacing:"0.3em", textAlign:"center", boxSizing:"border-box", fontWeight:700 }}
+            />
+            {twoFaError && <div style={{ marginTop:6, fontSize:12, color:"var(--danger,#ef4444)", fontWeight:600 }}>❌ Incorrect code. Try again.</div>}
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:18, paddingTop:14, borderTop:"1px solid var(--border)" }}>
+              <button onClick={() => setTwoFaDoc(null)} style={{ padding:"7px 16px", borderRadius:7, border:"1px solid var(--border)", background:"transparent", color:"var(--text-muted)", cursor:"pointer", fontSize:13 }}>Cancel</button>
+              <button onClick={confirm2FA} disabled={twoFaCode.length !== 6} style={{ padding:"7px 20px", borderRadius:7, border:"none", background:"var(--accent,#6c63ff)", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", opacity: twoFaCode.length !== 6 ? 0.5 : 1 }}>🔓 Verify & Open</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Camera scan modal ── */}
+      {scanModal && (
+        <Modal title={`📷 Scan Document${scanTargetDoc ? ` — attach to ${scanTargetDoc.name}` : ""}`} onClose={() => { setScanModal(false); setScanTargetDoc(null); }}>
+          <CameraScanner
+            onCapture={(att) => {
+              if (scanTargetDoc) {
+                const newAtts = [...(scanTargetDoc.attachments || []), att];
+                saveDocFiles(scanTargetDoc.id, newAtts);
+                toast(`📎 Scanned image attached to ${scanTargetDoc.name}`);
+              } else {
+                toast("📎 Scan captured — attach a document to save it", "info");
+              }
+            }}
+            onClose={() => { setScanModal(false); setScanTargetDoc(null); }}
+          />
+        </Modal>
+      )}
+
+      {/* ── Offline banner ── */}
+      {!isOnline && (
+        <div style={{ marginBottom:12, padding:"9px 16px", borderRadius:8, background:"rgba(234,179,8,0.12)", border:"1px solid rgba(234,179,8,0.4)", fontSize:13, color:"#92610a", display:"flex", alignItems:"center", gap:8, fontWeight:600 }}>
+          📶 You are offline — status changes will be queued and synced when reconnected.
+          {offlineQueue.length > 0 && <span style={{ marginLeft:4, fontSize:12, fontWeight:400 }}>({offlineQueue.length} pending)</span>}
+        </div>
+      )}
+      {isOnline && offlineQueue.length > 0 && (
+        <div style={{ marginBottom:12, padding:"9px 16px", borderRadius:8, background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.3)", fontSize:13, color:"#166534", display:"flex", alignItems:"center", gap:8, fontWeight:600 }}>
+          ✅ Back online — <button onClick={syncOfflineQueue} style={{ background:"none", border:"none", cursor:"pointer", color:"#166534", fontWeight:700, fontSize:13, textDecoration:"underline", padding:0 }}>sync {offlineQueue.length} pending change{offlineQueue.length!==1?"s":""}</button>
+        </div>
+      )}
+
+      {/* ── View-only banner ── */}
+      {role === "Viewer" && (
+        <div style={{ marginBottom:14, padding:"9px 16px", borderRadius:8, background:"rgba(148,163,184,0.13)", border:"1px solid var(--border)", fontSize:13, color:"var(--text-muted)", display:"flex", alignItems:"center", gap:8 }}>
+          👁 <strong style={{ color:"var(--text)" }}>View-only mode</strong> — you have read-only access to this workspace. Editing, downloading, and deleting are disabled.
+        </div>
+      )}
+
       {/* ── Smart Features Modals ── */}
       {showPDFExtract && <Modal title="🔍 PDF / File Extractor" onClose={() => setShowPDFExtract(false)}><PDFExtractModal onClose={() => setShowPDFExtract(false)} /></Modal>}
 
@@ -3485,7 +3912,17 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
       {/* ── Doc Editor modal ── */}
       {editingDoc && (
         <Modal title={`✏️ Edit — ${editingDoc.name}`} onClose={()=>setEditingDoc(null)}>
-          <DocEditor doc={editingDoc} onClose={()=>setEditingDoc(null)} onSave={saveEditorDoc} workspaceId={workspaceId} onSaveAsTemplate={() => setSaveAsTplDoc(editingDoc)} />
+          {isExpiryLocked(editingDoc) ? (
+            <div style={{ padding:"24px 16px", textAlign:"center", color:"var(--text-muted)", fontSize:14 }}>
+              <div style={{ fontSize:40, marginBottom:10 }}>🔒</div>
+              <div style={{ fontWeight:700, color:"var(--text)", marginBottom:6 }}>Document locked</div>
+              <div>This document expired on {new Date(editingDoc.expiresAt).toLocaleDateString()} and is now read-only.</div>
+              <div style={{ fontSize:12, marginTop:8 }}>To unlock it, update the expiry date via <strong>Edit details</strong>.</div>
+              <button onClick={()=>setEditingDoc(null)} style={{ marginTop:16, padding:"7px 18px", borderRadius:7, border:"1px solid var(--border)", background:"transparent", color:"var(--text-muted)", cursor:"pointer", fontSize:13 }}>Close</button>
+            </div>
+          ) : (
+            <DocEditor doc={editingDoc} onClose={()=>setEditingDoc(null)} onSave={saveEditorDoc} workspaceId={workspaceId} onSaveAsTemplate={() => setSaveAsTplDoc(editingDoc)} />
+          )}
         </Modal>
       )}
 
@@ -3495,6 +3932,7 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
           <FileUploader
             attachments={fileManagerDoc.attachments||[]}
             onChange={(newAtts)=>{ const updated={...fileManagerDoc,attachments:newAtts}; setFileManagerDoc(updated); saveDocFiles(fileManagerDoc.id, newAtts); }}
+            canDownload={canDownload}
           />
           <div style={{ marginTop:18 }}>
             <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:"var(--text-muted)", marginBottom:8, borderTop:"1px solid var(--border)", paddingTop:14 }}>File Converter / Compressor</div>
@@ -3632,9 +4070,14 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
               {/* Action footer */}
               <div style={{ display:"flex", gap:8, padding:"14px 20px", borderTop:"1px solid var(--border)", flexShrink:0, flexWrap:"wrap" }}>
                 {role !== "Viewer" && <>
-                  <button style={btnStyle("primary")} onClick={() => { setViewingDoc(null); setEditingDoc(d); }}>📝 Edit content</button>
+                  <button style={{ ...btnStyle("primary"), opacity: isExpiryLocked(d) ? 0.5 : 1 }}
+                    title={isExpiryLocked(d) ? "Expired — read only" : (SENSITIVE_TYPES.includes(d.type) && !unlockedSensitive.has(d.id) ? "Requires 2FA verification" : "Open editor")}
+                    onClick={() => { if (isExpiryLocked(d)) { toast("🔒 Document expired and is read-only","info"); return; } require2FA(d, () => { setViewingDoc(null); setEditingDoc(d); }); }}>
+                    {isExpiryLocked(d) ? "🔒 Locked" : (SENSITIVE_TYPES.includes(d.type) && !unlockedSensitive.has(d.id) ? "🔐 Edit (2FA)" : "📝 Edit content")}
+                  </button>
                   <button style={btnStyle("ghost")} onClick={() => { setViewingDoc(null); setEditing(d); setShowForm(true); }}>✏️ Edit details</button>
                   <button style={btnStyle("ghost")} onClick={() => { setViewingDoc(null); setFileManagerDoc(d); }}>📎 Files</button>
+                  <button style={btnStyle("ghost")} title="Scan physical document and attach" onClick={() => { setViewingDoc(null); setScanTargetDoc(d); setScanModal(true); }}>📷 Scan</button>
                 </>}
                 {(role==="Owner"||role==="Admin") && (
                   <button style={{ ...btnStyle("ghost"), color:"var(--danger)", marginLeft:"auto" }}
@@ -3658,8 +4101,8 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
         <div><h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--text)" }}>Documents</h2><p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>{filtered.length} of {(documents||[]).length} documents</p></div>
         <div style={{ display:"flex", gap:"8px", alignItems:"center", position:"relative" }}>
           <div style={{ display:"flex", borderRadius:7, border:"1px solid var(--border)", overflow:"hidden" }}>
-            {[["table","☰"],["cards","⊞"]].map(([mode,icon]) => (
-              <button key={mode} title={mode==="table"?"Table view":"Cards view"} onClick={() => setViewMode(mode)}
+            {[["table","☰","Table"],["cards","⊞","Cards"],["kanban","⬛","Kanban"],["calendar","📅","Calendar"],["portal","🏢","Client portal"],["starred","⭐","Starred"],["archive","🗃","Archive"]].map(([mode,icon,label]) => (
+              <button key={mode} title={label} onClick={() => setViewMode(mode)}
                 style={{ padding:"5px 10px", border:"none", cursor:"pointer", fontSize:14, lineHeight:1,
                   background: viewMode===mode ? "var(--accent,#6c63ff)" : "transparent",
                   color: viewMode===mode ? "#fff" : "var(--text-muted)",
@@ -3681,7 +4124,8 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
               </div>
             )}
           </div>
-          <button style={btnStyle("ghost","sm")} onClick={handleExport}>↓ Export CSV</button>
+          {canDownload && <button style={btnStyle("ghost","sm")} onClick={handleExport}>↓ Export CSV</button>}
+          <button style={btnStyle("ghost","sm")} title="Scan a physical document with camera" onClick={() => { setScanTargetDoc(null); setScanModal(true); }}>📷 Scan</button>
           <button style={btnStyle("ghost","sm")} onClick={() => setShowPDFExtract(true)} title="Extract key info from a PDF">🔍 Extract</button>
           <button style={{ ...btnStyle("ghost","sm"), position:"relative" }} onClick={() => setShowOverdue(true)} title="Overdue alerts dashboard">
             ⚠ Alerts{overdueCount > 0 && <span style={{ position:"absolute", top:-4, right:-4, minWidth:14, height:14, borderRadius:99, background:"var(--danger,#ef4444)", color:"#fff", fontSize:9, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px" }}>{overdueCount}</span>}
@@ -3759,25 +4203,263 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
 
       {/* ── Bulk action bar ── */}
       {selected.size > 0 && (
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12, padding:"8px 14px", borderRadius:7, background:"var(--accent-muted,rgba(108,99,255,0.08))", border:"1px solid rgba(108,99,255,0.2)" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12, padding:"8px 14px", borderRadius:7, background:"var(--accent-muted,rgba(108,99,255,0.08))", border:"1px solid rgba(108,99,255,0.2)", flexWrap:"wrap" }}>
           <span style={{ fontSize:13, fontWeight:600, color:"var(--accent,#6c63ff)" }}>{selected.size} selected</span>
           <button style={{ ...btnStyle("ghost","sm") }} onClick={bulkExport}>↓ Export</button>
+          <div style={{ position:"relative" }}>
+            <button style={{ ...btnStyle("ghost","sm") }} onClick={() => setShowBulkStatus(v=>!v)}>🔄 Set status ▾</button>
+            {showBulkStatus && (
+              <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, background:"var(--card,var(--surface))", border:"1px solid var(--border)", borderRadius:8, zIndex:50, minWidth:140, boxShadow:"0 4px 16px rgba(0,0,0,0.13)", overflow:"hidden" }}>
+                {DOC_STATUSES.map(s => {
+                  const c = STATUS_COLORS[s] || STATUS_COLORS.Draft;
+                  return (
+                    <div key={s} onClick={() => bulkStatusChange(s)}
+                      style={{ padding:"7px 12px", cursor:"pointer", fontSize:12, fontWeight:600, color:c.color, display:"flex", alignItems:"center", gap:7 }}>
+                      <span style={{ width:7, height:7, borderRadius:"50%", background:c.dot }} />{s}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           {(role==="Owner"||role==="Admin") && <button style={{ ...btnStyle("ghost","sm"), color:"var(--danger)" }} onClick={bulkDelete}>🗑 Delete</button>}
           <button style={{ ...btnStyle("ghost","sm"), marginLeft:"auto" }} onClick={() => setSelected(new Set())}>✕ Deselect all</button>
         </div>
       )}
 
-      {/* ── Table / Cards or empty ── */}
-      {filtered.length === 0 ? (
+      {/* ── Kanban view ── */}
+      {viewMode === "kanban" && (
+        <div style={{ overflowX:"auto", paddingBottom:16 }}>
+          <div style={{ display:"flex", gap:14, minWidth:"max-content" }}>
+            {DOC_STATUSES.map(status => {
+              const col = STATUS_COLORS[status] || STATUS_COLORS.Draft;
+              const colDocs = (documents||[]).filter(d => d.status === status && (filterType==="All"||d.type===filterType) && (!search || d.name?.toLowerCase().includes(search.toLowerCase())));
+              return (
+                <div key={status} style={{ width:240, flexShrink:0 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 10px", borderRadius:"8px 8px 0 0", background:col.bg, border:`1px solid ${col.dot}40`, borderBottom:"none", marginBottom:0 }}>
+                    <span style={{ width:8, height:8, borderRadius:"50%", background:col.dot, flexShrink:0 }} />
+                    <span style={{ fontWeight:700, fontSize:12, color:col.color, textTransform:"uppercase", letterSpacing:"0.06em" }}>{status}</span>
+                    <span style={{ marginLeft:"auto", fontSize:11, color:col.color, fontWeight:600, background:`${col.dot}22`, padding:"1px 7px", borderRadius:999 }}>{colDocs.length}</span>
+                  </div>
+                  <div style={{ minHeight:120, background:"var(--surface)", border:`1px solid var(--border)`, borderRadius:"0 0 8px 8px", padding:8, display:"flex", flexDirection:"column", gap:7 }}>
+                    {colDocs.length === 0 && <div style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"20px 0", opacity:0.6 }}>No documents</div>}
+                    {colDocs.map(d => (
+                      <div key={d.id} onClick={() => { setViewingDoc(d); addActivity(d, "opened"); }}
+                        style={{ padding:"10px 12px", borderRadius:7, background:"var(--card,var(--surface))", border:"1px solid var(--border)", cursor:"pointer", boxShadow:"0 1px 4px rgba(0,0,0,0.06)", transition:"box-shadow 0.12s" }}
+                        onMouseEnter={e => e.currentTarget.style.boxShadow="0 3px 10px rgba(0,0,0,0.12)"}
+                        onMouseLeave={e => e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.06)"}>
+                        <div style={{ fontWeight:600, fontSize:13, color:"var(--text)", marginBottom:4, lineHeight:1.3 }}>{TYPE_ICONS[d.type]||"📄"} {d.name}</div>
+                        {d.relatedClient && <div style={{ fontSize:11, color:"var(--text-muted)" }}>👤 {d.relatedClient}</div>}
+                        {d.expiresAt && <div style={{ fontSize:11, color: expiryState(d) ? "#a07c00" : "var(--text-muted)", marginTop:3 }}>📅 {relativeTime(d.expiresAt)}</div>}
+                        {(d.tags||[]).length > 0 && <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginTop:4 }}>{d.tags.slice(0,2).map(t => <span key={t} style={{ fontSize:9, padding:"1px 5px", borderRadius:999, background:"var(--accent-muted,rgba(108,99,255,0.1))", color:"var(--accent,#6c63ff)", fontWeight:600 }}>{t}</span>)}</div>}
+                        <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:4, display:"flex", alignItems:"center", gap:6 }}>
+                          <span>{relativeTime(d.createdAt)}</span>
+                          {starred.has(d.id) && <span style={{ color:"#f59e0b" }}>⭐</span>}
+                          {(d.attachments||[]).length > 0 && <span>📎{d.attachments.length}</span>}
+                          {role !== "Viewer" && (
+                            <span style={{ marginLeft:"auto", display:"flex", gap:3 }}>
+                              <button title="Change status" style={{ background:"none", border:"none", cursor:"pointer", fontSize:11, padding:"1px 4px", color:"var(--text-muted)", borderRadius:4 }}
+                                onClick={e => { e.stopPropagation(); setInlineStatusFor(inlineStatusFor===d.id ? null : d.id); }}>⟳</button>
+                              {inlineStatusFor === d.id && (
+                                <div style={{ position:"absolute", zIndex:40, background:"var(--card,var(--surface))", border:"1px solid var(--border)", borderRadius:7, overflow:"hidden", boxShadow:"0 4px 14px rgba(0,0,0,0.13)", minWidth:120 }}>
+                                  {DOC_STATUSES.map(s => {
+                                    const c = STATUS_COLORS[s]||STATUS_COLORS.Draft;
+                                    return <div key={s} onClick={() => updateStatus(d.id, s)} style={{ padding:"7px 12px", cursor:"pointer", fontSize:12, fontWeight:600, color:c.color, background:d.status===s?c.bg:"transparent", display:"flex", alignItems:"center", gap:7 }}><span style={{ width:7, height:7, borderRadius:"50%", background:c.dot }} />{s}</div>;
+                                  })}
+                                </div>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Calendar view ── */}
+      {viewMode === "calendar" && (() => {
+        const now = new Date();
+        const [calYear, setCalYear] = useState(now.getFullYear());
+        const [calMonth, setCalMonth] = useState(now.getMonth());
+        const firstDay = new Date(calYear, calMonth, 1).getDay();
+        const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+        const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+        const allDocs = documents||[];
+        const docsWithDate = allDocs.filter(d => d.expiresAt || d.createdAt);
+        const docsByDate = {};
+        docsWithDate.forEach(d => {
+          const dt = d.expiresAt || d.createdAt;
+          if (dt?.slice(0,7) === `${calYear}-${String(calMonth+1).padStart(2,"0")}`) {
+            const day = parseInt(dt.slice(8,10));
+            docsByDate[day] = docsByDate[day] || [];
+            docsByDate[day].push({ doc:d, isExpiry:!!d.expiresAt&&dt===d.expiresAt });
+          }
+        });
+        const cells = [];
+        for (let i=0; i<firstDay; i++) cells.push(null);
+        for (let i=1; i<=daysInMonth; i++) cells.push(i);
+        return (
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
+              <button onClick={() => { if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1); }} style={{ ...btnStyle("ghost","sm") }}>◀</button>
+              <span style={{ fontWeight:700, fontSize:15, color:"var(--text)" }}>{monthNames[calMonth]} {calYear}</span>
+              <button onClick={() => { if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1); }} style={{ ...btnStyle("ghost","sm") }}>▶</button>
+              <button onClick={() => { setCalMonth(now.getMonth()); setCalYear(now.getFullYear()); }} style={{ ...btnStyle("ghost","sm"), marginLeft:4 }}>Today</button>
+              <span style={{ fontSize:12, color:"var(--text-muted)", marginLeft:8 }}>📅 expiry &nbsp; ✦ created</span>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 }}>
+              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => (
+                <div key={d} style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", color:"var(--text-muted)", textAlign:"center", padding:"4px 0" }}>{d}</div>
+              ))}
+              {cells.map((day, i) => {
+                const todayStr = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+                const isToday = day && todayStr === new Date().toISOString().slice(0,10);
+                const entries = day ? (docsByDate[day]||[]) : [];
+                return (
+                  <div key={i} style={{ minHeight:80, borderRadius:7, border:`1px solid ${isToday?"var(--accent,#6c63ff)":"var(--border)"}`, background: isToday ? "var(--accent-muted,rgba(108,99,255,0.07))" : day ? "var(--surface)" : "transparent", padding:"5px 6px", opacity: day ? 1 : 0 }}>
+                    {day && <div style={{ fontSize:12, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--accent,#6c63ff)" : "var(--text-muted)", marginBottom:3 }}>{day}</div>}
+                    {entries.slice(0,2).map(({doc,isExpiry},j) => {
+                      const sc = STATUS_COLORS[doc.status]||STATUS_COLORS.Draft;
+                      return (
+                        <div key={j} title={doc.name} onClick={() => { setViewingDoc(doc); addActivity(doc,"opened"); }}
+                          style={{ fontSize:10, fontWeight:600, color:sc.color, background:sc.bg, borderRadius:3, padding:"1px 4px", marginBottom:2, cursor:"pointer", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                          {isExpiry?"📅":"✦"} {doc.name}
+                        </div>
+                      );
+                    })}
+                    {entries.length > 2 && <div style={{ fontSize:10, color:"var(--text-muted)" }}>+{entries.length-2} more</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Client portal view ── */}
+      {viewMode === "portal" && (() => {
+        const allClients = [...new Set((documents||[]).map(d => d.relatedClient).filter(Boolean))].sort();
+        const portalDocs = (documents||[]).filter(d => portalClient==="All" ? true : d.relatedClient===portalClient);
+        const groupedByClient = {};
+        (portalClient==="All" ? allClients : [portalClient]).forEach(c => {
+          groupedByClient[c] = portalDocs.filter(d => d.relatedClient===c);
+        });
+        return (
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+              <span style={{ fontSize:13, fontWeight:600, color:"var(--text-muted)" }}>Client:</span>
+              <select value={portalClient} onChange={e => setPortalClient(e.target.value)} style={{ ...inputStyle, width:"auto" }}>
+                <option value="All">All clients</option>
+                {allClients.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              {portalClient !== "All" && (
+                <div style={{ marginLeft:"auto", fontSize:13, color:"var(--text-muted)" }}>
+                  {portalDocs.length} document{portalDocs.length!==1?"s":""} for <strong style={{ color:"var(--text)" }}>{portalClient}</strong>
+                </div>
+              )}
+            </div>
+            {Object.entries(groupedByClient).length === 0 && <EmptyState icon="🏢" title="No clients found" sub="Documents with a linked client will appear here." />}
+            {Object.entries(groupedByClient).map(([client, docs]) => (
+              <div key={client} style={{ marginBottom:20 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, paddingBottom:8, borderBottom:"2px solid var(--border)" }}>
+                  <span style={{ fontSize:16 }}>👤</span>
+                  <span style={{ fontWeight:700, fontSize:16, color:"var(--text)" }}>{client}</span>
+                  <span style={{ fontSize:12, color:"var(--text-muted)", marginLeft:4 }}>{docs.length} doc{docs.length!==1?"s":""}</span>
+                  <div style={{ marginLeft:"auto", display:"flex", gap:6 }}>
+                    {DOC_STATUSES.map(s => {
+                      const n = docs.filter(d=>d.status===s).length;
+                      if (!n) return null;
+                      const c = STATUS_COLORS[s]||STATUS_COLORS.Draft;
+                      return <span key={s} style={{ fontSize:11, padding:"2px 8px", borderRadius:999, background:c.bg, color:c.color, fontWeight:600 }}>{s}: {n}</span>;
+                    })}
+                  </div>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:10 }}>
+                  {docs.map(d => {
+                    const sc = STATUS_COLORS[d.status]||STATUS_COLORS.Draft;
+                    const exp = expiryState(d);
+                    return (
+                      <div key={d.id} onClick={() => { setViewingDoc(d); addActivity(d,"opened"); }}
+                        style={{ padding:"12px 14px", borderRadius:8, border:`1px solid ${exp?"#d4a000":"var(--border)"}`, background:"var(--surface)", cursor:"pointer", display:"flex", flexDirection:"column", gap:6 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontSize:18 }}>{TYPE_ICONS[d.type]||"📄"}</span>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontWeight:600, fontSize:13, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.name}</div>
+                            <div style={{ fontSize:11, color:"var(--text-muted)" }}>{d.type}</div>
+                          </div>
+                          <span style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"2px 8px", borderRadius:999, fontSize:11, fontWeight:600, background:sc.bg, color:sc.color, flexShrink:0 }}>
+                            <span style={{ width:5, height:5, borderRadius:"50%", background:sc.dot }} />{d.status}
+                          </span>
+                        </div>
+                        <div style={{ fontSize:11, color:"var(--text-muted)", display:"flex", gap:10 }}>
+                          <span>{relativeTime(d.createdAt)}</span>
+                          {d.expiresAt && <span style={{ color:exp?"#a07c00":"inherit" }}>📅 {relativeTime(d.expiresAt)}</span>}
+                          {(d.attachments||[]).length > 0 && <span>📎{d.attachments.length}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* ── Starred view ── */}
+      {viewMode === "starred" && filtered.length === 0 && (
+        <EmptyState icon="⭐" title="No starred documents" sub="Click the ☆ star icon on any document to pin it here." />
+      )}
+
+      {/* ── Archive view ── */}
+      {viewMode === "archive" && (
+        <div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, padding:"10px 14px", borderRadius:8, background:"rgba(148,163,184,0.08)", border:"1px solid var(--border)" }}>
+            <span style={{ fontSize:20 }}>🗃</span>
+            <div>
+              <div style={{ fontWeight:600, fontSize:14, color:"var(--text)" }}>Archive</div>
+              <div style={{ fontSize:12, color:"var(--text-muted)" }}>{filtered.length} archived document{filtered.length!==1?"s":""}. To restore, change a document's status.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Table / Cards (also used by starred & archive views) ── */}
+      {(viewMode === "table" || viewMode === "cards" || viewMode === "starred" || viewMode === "archive") && filtered.length === 0 && viewMode !== "starred" && viewMode !== "archive" ? (
         <EmptyState icon="📄" title={activeFilters ? "No matching documents" : "No documents"} sub={activeFilters ? "Try adjusting your filters." : "Track your proposals, contracts, and files."} action={!activeFilters && <button style={btnStyle("primary")} onClick={() => setShowForm(true)}>+ Add document</button>} />
-      ) : viewMode === "cards" ? (
+      ) : (viewMode === "cards" || viewMode === "starred") && filtered.length > 0 ? (
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))", gap:14 }}>
           {filtered.map(d => {
             const sc = STATUS_COLORS[d.status] || STATUS_COLORS.Draft;
             const exp = expiryState(d);
             const isSel = selected.has(d.id);
+            const statusList = ["Draft","Review","Sent","Signed","Expired","Archived"];
+            const curIdx = statusList.indexOf(d.status);
+            // Swipe handlers
+            let swipeStartX = null;
+            const onTouchStart = (e) => { swipeStartX = e.touches[0].clientX; };
+            const onTouchEnd  = (e) => {
+              if (swipeStartX === null || role === "Viewer") return;
+              const dx = e.changedTouches[0].clientX - swipeStartX;
+              swipeStartX = null;
+              if (Math.abs(dx) < 60) return; // ignore small swipes
+              const nextIdx = dx < 0
+                ? Math.min(curIdx + 1, statusList.length - 1)   // swipe left → next status
+                : Math.max(curIdx - 1, 0);                        // swipe right → prev status
+              if (nextIdx === curIdx) return;
+              const newStatus = statusList[nextIdx];
+              if (isOnline) updateStatus(d.id, newStatus);
+              else enqueueOffline({ type:"status", docId:d.id, status:newStatus });
+            };
             return (
-              <div key={d.id} onClick={() => { setViewingDoc(d); addActivity(d, "opened"); }}
+              <div key={d.id}
+                onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}
+                onClick={() => { setViewingDoc(d); addActivity(d, "opened"); }}
                 style={{ position:"relative", borderRadius:10, border:`1.5px solid ${isSel ? "var(--accent,#6c63ff)" : exp==="expired" ? "var(--danger,#ef4444)" : exp==="soon" ? "#d4a000" : "var(--border)"}`,
                   background: isSel ? "rgba(108,99,255,0.05)" : "var(--surface)", padding:"16px", cursor:"pointer",
                   boxShadow:"0 1px 4px rgba(0,0,0,0.06)", transition:"box-shadow 0.15s,border-color 0.15s",
@@ -3785,7 +4467,13 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
 
                 {/* Card header */}
                 <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
-                  <div style={{ fontSize:24, lineHeight:1, flexShrink:0 }}>{TYPE_ICONS[d.type] || "📄"}</div>
+                  <div style={{ position:"relative", flexShrink:0 }}>
+                    <div style={{ fontSize:24, lineHeight:1 }}>{TYPE_ICONS[d.type] || "📄"}</div>
+                    <button title={starred.has(d.id) ? "Unstar" : "Star"} onClick={e => { e.stopPropagation(); toggleStar(d.id); }}
+                      style={{ position:"absolute", top:-6, right:-8, background:"none", border:"none", cursor:"pointer", fontSize:12, padding:0, lineHeight:1, color: starred.has(d.id) ? "#f59e0b" : "var(--text-muted)" }}>
+                      {starred.has(d.id) ? "⭐" : "☆"}
+                    </button>
+                  </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:700, fontSize:14, color:"var(--text)", lineHeight:1.3, wordBreak:"break-word",
                       overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>
@@ -3824,11 +4512,19 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
 
                 {/* Footer: date + actions */}
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:"auto", paddingTop:10, borderTop:"1px solid var(--border)" }}>
-                  <span style={{ fontSize:11, color:"var(--text-muted)" }}>{relativeTime(d.updatedAt || d.createdAt)}</span>
+                  <span style={{ fontSize:11, color:"var(--text-muted)" }}>
+                    {relativeTime(d.updatedAt || d.createdAt)}
+                    {role !== "Viewer" && <span style={{ marginLeft:6, opacity:0.5, fontSize:10 }} title="Swipe left/right to change status">⟵⟶</span>}
+                  </span>
                   <div style={{ display:"flex", gap:4 }} onClick={e => e.stopPropagation()}>
                     {role !== "Viewer" && <>
-                      <button title="Open editor" style={{ ...btnStyle("ghost","sm"), padding:"3px 7px" }} onClick={() => setEditingDoc(d)}>📝</button>
+                      <button title={isExpiryLocked(d) ? "Expired — read only" : (SENSITIVE_TYPES.includes(d.type) && !unlockedSensitive.has(d.id) ? "Requires 2FA" : "Open editor")}
+                        style={{ ...btnStyle("ghost","sm"), padding:"3px 7px" }}
+                        onClick={() => { if (isExpiryLocked(d)) { toast("🔒 Document expired","info"); return; } require2FA(d, () => setEditingDoc(d)); }}>
+                        {isExpiryLocked(d) ? "🔒" : (SENSITIVE_TYPES.includes(d.type) && !unlockedSensitive.has(d.id) ? "🔐" : "📝")}
+                      </button>
                       <button title="Files" style={{ ...btnStyle("ghost","sm"), padding:"3px 7px" }} onClick={() => setFileManagerDoc(d)}>📎</button>
+                      <button title="Scan physical document" style={{ ...btnStyle("ghost","sm"), padding:"3px 7px" }} onClick={() => { setScanTargetDoc(d); setScanModal(true); }}>📷</button>
                       <button title="Edit metadata" style={{ ...btnStyle("ghost","sm"), padding:"3px 7px" }} onClick={() => { setEditing(d); setShowForm(true); }}>✏️</button>
                     </>}
                     {(role==="Owner"||role==="Admin") && (
@@ -3840,7 +4536,7 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
             );
           })}
         </div>
-      ) : (
+      ) : (viewMode === "table" || viewMode === "archive") && filtered.length > 0 ? (
         <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid var(--border)" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
@@ -3888,6 +4584,10 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
                     {/* Name + tags + note snippet + expiry badge */}
                     <td style={{ padding: "11px 14px", maxWidth: 240 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <button title={starred.has(d.id) ? "Unstar" : "Star"} onClick={e => { e.stopPropagation(); toggleStar(d.id); }}
+                          style={{ background:"none", border:"none", cursor:"pointer", fontSize:14, padding:"0 2px", lineHeight:1, color: starred.has(d.id) ? "#f59e0b" : "var(--text-muted)", flexShrink:0, opacity: starred.has(d.id) ? 1 : 0.35 }}>
+                          {starred.has(d.id) ? "⭐" : "☆"}
+                        </button>
                         <span title="Click to preview" onClick={() => { setViewingDoc(d); addActivity(d, "opened"); }} style={{ fontWeight: 600, color: "var(--accent,#6c63ff)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>{d.name}</span>
                         {exp === "expired" && <span style={{ fontSize:10, padding:"1px 6px", borderRadius:999, background:"rgba(239,68,68,0.12)", color:"#991b1b", fontWeight:700, flexShrink:0 }}>EXPIRED</span>}
                         {exp === "soon"    && <span style={{ fontSize:10, padding:"1px 6px", borderRadius:999, background:"rgba(234,179,8,0.13)", color:"#a07c00", fontWeight:700, flexShrink:0 }}>EXPIRING</span>}
@@ -3977,10 +4677,15 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
                     <td style={{ padding: "11px 14px" }}>
                       <div style={{ display: "flex", gap: 4, opacity: isHovered || isSel ? 1 : 0.45, transition: "opacity 0.1s" }}>
                         {role !== "Viewer" && <>
-                          <button title="Open editor" style={{ ...btnStyle("ghost","sm"), padding: "4px 8px" }} onClick={() => setEditingDoc(d)}>📝</button>
+                          <button title={isExpiryLocked(d) ? "Expired — read only" : (SENSITIVE_TYPES.includes(d.type) && !unlockedSensitive.has(d.id) ? "Requires 2FA" : "Open editor")}
+                            style={{ ...btnStyle("ghost","sm"), padding: "4px 8px", opacity: isExpiryLocked(d) ? 0.45 : 1 }}
+                            onClick={() => { if (isExpiryLocked(d)) { toast("🔒 Document expired and is read-only","info"); return; } require2FA(d, () => setEditingDoc(d)); }}>
+                            {isExpiryLocked(d) ? "🔒" : (SENSITIVE_TYPES.includes(d.type) && !unlockedSensitive.has(d.id) ? "🔐" : "📝")}
+                          </button>
                           <button title="Files & attachments" style={{ ...btnStyle("ghost","sm"), padding: "4px 8px" }} onClick={() => setFileManagerDoc(d)}>
                             📎{(d.attachments||[]).length > 0 && <span style={{ fontSize:9, marginLeft:2, background:"var(--accent,#6c63ff)", color:"#fff", borderRadius:999, padding:"0 4px" }}>{d.attachments.length}</span>}
                           </button>
+                          <button title="Scan physical document with camera" style={{ ...btnStyle("ghost","sm"), padding: "4px 8px" }} onClick={() => { setScanTargetDoc(d); setScanModal(true); }}>📷</button>
                           <button title="Edit metadata" style={{ ...btnStyle("ghost","sm"), padding: "4px 8px" }} onClick={() => setEditing(d)}>✏️</button>
                           <button title="Duplicate" style={{ ...btnStyle("ghost","sm"), padding: "4px 8px" }} onClick={() => duplicate(d)}>⧉</button>
                         </>}
@@ -4019,7 +4724,7 @@ export default function DocumentsTab({ documents, setDocuments, addAudit, role, 
             </tbody>
           </table>
         </div>
-      )}
+      ) : null}
 
       {/* ── Footer count ── */}
       {filtered.length > 0 && (

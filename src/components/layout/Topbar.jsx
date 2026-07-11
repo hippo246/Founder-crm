@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { inputStyle, btnStyle } from "../ui/UI.jsx";
+import Calculator from "../Calculator.jsx";
 
 export default function Topbar({ onSearchOpen, onMobileMenu, isDark, toggleTheme, role, settings, saveSettings, workspaces, currentWorkspaceId, switchWorkspace, user, onLogout }) {
   const currentWorkspace = workspaces?.find(w => w.id === currentWorkspaceId) || workspaces?.[0];
@@ -6,6 +8,12 @@ export default function Topbar({ onSearchOpen, onMobileMenu, isDark, toggleTheme
   const initials = ownerName
     ? ownerName.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()
     : "?";
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+
+  // Close dropdown when clicking outside
+  const handleDropdownClick = (e) => {
+    e.stopPropagation();
+  };
 
   return (
     <header className="topbar">
@@ -63,6 +71,12 @@ export default function Topbar({ onSearchOpen, onMobileMenu, isDark, toggleTheme
 
       {/* Right actions */}
       <div className="topbar-actions">
+        {/* Calculator */}
+        <Calculator 
+          exchangeRates={settings.exchangeRates || {}}
+          defaultCurrency={settings.currency || "INR"}
+        />
+
         {/* Theme toggle */}
         <button
           data-testid="theme-toggle"
@@ -74,35 +88,125 @@ export default function Topbar({ onSearchOpen, onMobileMenu, isDark, toggleTheme
           {isDark ? "☀️" : "🌙"}
         </button>
 
-        {/* User + logout */}
+        {/* User Profile Dropdown */}
         {onLogout && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {ownerName && (
+          <div style={{ position: "relative" }} onClick={handleDropdownClick}>
+            <button
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 4,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                gap: 6
+              }}
+              onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+            >
+              {/* Online status indicator */}
+              <div style={{ position: "relative" }}>
+                <div
+                  title={ownerName}
+                  style={{
+                    width: 28, height: 28, borderRadius: "50%",
+                    background: "linear-gradient(135deg, var(--accent), #6366F1)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 10, fontWeight: 700, color: "#fff",
+                    flexShrink: 0, userSelect: "none"
+                  }}
+                >
+                  {initials}
+                </div>
+                {/* Active status dot */}
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: -2,
+                    right: -2,
+                    width: 12,
+                    height: 12,
+                    background: "var(--success)",
+                    borderRadius: "50%",
+                    border: "2px solid var(--surface)",
+                    zIndex: 1
+                  }}
+                  title="Online"
+                />
+              </div>
+            </button>
+
+            {/* Dropdown Menu */}
+            {showProfileDropdown && (
               <div
-                title={ownerName}
                 style={{
-                  width: 28, height: 28, borderRadius: "50%",
-                  background: "linear-gradient(135deg, var(--accent), #6366F1)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 10, fontWeight: 700, color: "#fff",
-                  flexShrink: 0, userSelect: "none", cursor: "default"
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  marginTop: 8,
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--r-md)",
+                  padding: 8,
+                  minWidth: 200,
+                  boxShadow: "var(--shadow-md)",
+                  zIndex: 1000
                 }}
               >
-                {initials}
+                {/* User Info */}
+                <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", marginBottom: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{ownerName}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{role}</div>
+                  <div style={{ fontSize: 12, color: "var(--success)", display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
+                    <div style={{ width: 8, height: 8, background: "var(--success)", borderRadius: "50%" }} />
+                    Online
+                  </div>
+                </div>
+
+                {/* Theme Toggle */}
+                <button
+                  style={{ ...btnStyle("ghost", "sm"), width: "100%", justifyContent: "flex-start" }}
+                  onClick={() => {
+                    toggleTheme();
+                    setShowProfileDropdown(false);
+                  }}
+                >
+                  {isDark ? "☀️ Light Mode" : "🌙 Dark Mode"}
+                </button>
+
+                {/* Logout */}
+                <button
+                  data-testid="logout-btn"
+                  style={{ ...btnStyle("ghost", "sm"), width: "100%", justifyContent: "flex-start", color: "var(--danger)" }}
+                  onClick={() => {
+                    onLogout();
+                    setShowProfileDropdown(false);
+                  }}
+                  aria-label={`Logout${ownerName ? ` (${ownerName})` : ""}`}
+                  title={`Logout${ownerName ? ` (${ownerName})` : ""}`}
+                >
+                  🚪 Logout
+                </button>
               </div>
             )}
-            <button
-              data-testid="logout-btn"
-              style={{ ...btnStyle("ghost", "sm"), padding: "5px 9px", fontSize: 12, color: "var(--text-muted)" }}
-              onClick={onLogout}
-              aria-label={`Logout${ownerName ? ` (${ownerName})` : ""}`}
-              title={`Logout${ownerName ? ` (${ownerName})` : ""}`}
-            >
-              🚪
-            </button>
           </div>
         )}
       </div>
+
+      {/* Close dropdown when clicking outside */}
+      {showProfileDropdown && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 999
+          }}
+          onClick={() => setShowProfileDropdown(false)}
+        />
+      )}
     </header>
   );
 }

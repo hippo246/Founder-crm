@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Modal, Confirm, SearchInput, EmptyState, btnStyle, toast } from "../../components/ui/UI.jsx";
 import { genId } from "../../lib/helpers.js";
 import { saveWorkspaceData } from "../../lib/storage.js";
@@ -17,6 +17,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
   const [viewMode, setViewMode] = useState("cards"); // "cards" | "table"
   const [expandedRow, setExpandedRow] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [showImportMenu, setShowImportMenu] = useState(false);
 
   const filtered = useMemo(() => {
     let result = contacts;
@@ -68,6 +69,69 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
     toast("Contacts exported");
   };
 
+  const downloadImportTemplate = () => {
+    const templateData = [
+      {
+        "Name": "John Doe",
+        "Company": "Tech Corp",
+        "Phone": "+1234567890",
+        "Email": "john@example.com",
+        "Status": "Active",
+        "Tags": "client, important"
+      }
+    ];
+    exportToCSV(templateData, "contacts-import-template");
+    toast("Template downloaded");
+  };
+
+  const handleImportCSV = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const csvData = event.target.result;
+        const lines = csvData.split('\n');
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+        
+        const importedContacts = [];
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim()) continue;
+          
+          const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, ''));
+          const contact = {};
+          
+          headers.forEach((header, index) => {
+            contact[header] = values[index] || '';
+          });
+          
+          importedContacts.push({
+            id: genId(),
+            name: contact["Name"] || "",
+            company: contact["Company"] || "",
+            phone: contact["Phone"] || "",
+            email: contact["Email"] || "",
+            status: contact["Status"] || "Active",
+            tags: contact["Tags"] ? contact["Tags"].split(',').map(t => t.trim()) : [],
+            createdAt: new Date().toISOString().slice(0,10)
+          });
+        }
+        
+        const newContacts = [...contacts, ...importedContacts];
+        setContacts(newContacts);
+        saveWorkspaceData("contacts", newContacts, workspaceId);
+        addAudit("Contacts", "Import", `Imported ${importedContacts.length} contact(s)`);
+        toast(`${importedContacts.length} contact(s) imported successfully`);
+        setShowImportMenu(false);
+      } catch (error) {
+        console.error("Import error:", error);
+        toast("Failed to import CSV", "error");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -76,6 +140,51 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
           <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--text-muted)" }}>{contacts.length} contacts</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ position: "relative" }}>
+            <button style={btnStyle("ghost", "sm")} onClick={() => setShowImportMenu(!showImportMenu)}>Import CSV</button>
+            {showImportMenu && (
+              <div style={{
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                boxShadow: "var(--shadow-md)",
+                padding: "8px 0",
+                minWidth: "200px",
+                zIndex: 100
+              }}>
+                <button style={{
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 16px",
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  fontSize: 13
+                }} onClick={downloadImportTemplate}>
+                  📄 Download Template
+                </button>
+                <label style={{
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 16px",
+                  cursor: "pointer",
+                  display: "block",
+                  fontSize: 13
+                }}>
+                  📂 Upload CSV
+                  <input
+                    type="file"
+                    accept=".csv"
+                    style={{ display: "none" }}
+                    onChange={handleImportCSV}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
           <button style={btnStyle("ghost", "sm")} onClick={handleExport}>Export CSV</button>
           <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden" }}>
             <button onClick={() => setViewMode("cards")} style={{ padding: "4px 10px", fontSize: 13, background: viewMode === "cards" ? "var(--accent)" : "transparent", color: viewMode === "cards" ? "#fff" : "var(--text-muted)", border: "none", cursor: "pointer" }}>⊞</button>
@@ -131,9 +240,8 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                 const contactFollowUps = followUps.filter(f => f.contactId === contact.id || f.contact === contact.name);
                 const contactNotes = notes.filter(n => n.contactId === contact.id || n.contact === contact.name);
                 return (
-                  <>
+                  <React.Fragment key={contact.id}>
                     <tr
-                      key={contact.id}
                       onClick={() => setExpandedRow(isExpanded ? null : contact.id)}
                       style={{ borderBottom: "1px solid var(--border)", background: isExpanded ? "var(--surface-raised)" : i % 2 === 0 ? "transparent" : "rgba(0,0,0,0.01)", cursor: "pointer", transition: "background 0.1s" }}
                     >
@@ -223,7 +331,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 {sec("Leads", contactLeads.length)}
                                 {contactLeads.length === 0 ? <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No leads</div> : (
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {contactLeads.map(l => row(l.name || "Unnamed lead", l.stage))}
+                                    {contactLeads.map(l => <React.Fragment key={l.id}>{row(l.name || "Unnamed lead", l.stage)}</React.Fragment>)}
                                   </div>
                                 )}
                               </div>
@@ -233,7 +341,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 {sec("Projects", cProjects.length)}
                                 {cProjects.length === 0 ? <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No projects</div> : (
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {cProjects.map(p => row(p.name || p.title || "Unnamed", p.status))}
+                                    {cProjects.map(p => <React.Fragment key={p.id}>{row(p.name || p.title || "Unnamed", p.status)}</React.Fragment>)}
                                   </div>
                                 )}
                               </div>
@@ -243,7 +351,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 {sec("Tasks", cTasks.length)}
                                 {cTasks.length === 0 ? <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No tasks</div> : (
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {cTasks.map(t => row(t.title || t.name || "Unnamed", t.status, t.status === "Done" ? "#10b981" : t.status === "Blocked" ? "#ef4444" : undefined))}
+                                    {cTasks.map(t => <React.Fragment key={t.id}>{row(t.title || t.name || "Unnamed", t.status, t.status === "Done" ? "#10b981" : t.status === "Blocked" ? "#ef4444" : undefined)}</React.Fragment>)}
                                   </div>
                                 )}
                               </div>
@@ -253,7 +361,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 {sec("Follow-Ups", contactFollowUps.length)}
                                 {contactFollowUps.length === 0 ? <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No follow-ups</div> : (
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {contactFollowUps.map(f => row(`${f.type}${f.dueDate ? ` · ${f.dueDate}` : ""}`, f.status, f.status === "Done" ? "#10b981" : f.status === "Missed" ? "#ef4444" : undefined))}
+                                    {contactFollowUps.map(f => <React.Fragment key={f.id}>{row(`${f.type}${f.dueDate ? ` · ${f.dueDate}` : ""}`, f.status, f.status === "Done" ? "#10b981" : f.status === "Missed" ? "#ef4444" : undefined)}</React.Fragment>)}
                                   </div>
                                 )}
                               </div>
@@ -263,7 +371,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 {sec("Invoices", cInvoices.length)}
                                 {cInvoices.length === 0 ? <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No invoices</div> : (
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {cInvoices.map(inv => row(inv.number || inv.title || "Invoice", `${inv.status}${inv.total ? ` · ₹${inv.total}` : ""}`, inv.status === "Paid" ? "#10b981" : inv.status === "Overdue" ? "#ef4444" : undefined))}
+                                    {cInvoices.map(inv => <React.Fragment key={inv.id}>{row(inv.number || inv.title || "Invoice", `${inv.status}${inv.total ? ` · ₹${inv.total}` : ""}`, inv.status === "Paid" ? "#10b981" : inv.status === "Overdue" ? "#ef4444" : undefined)}</React.Fragment>)}
                                   </div>
                                 )}
                               </div>
@@ -273,7 +381,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 <div>
                                   {sec("Proposals", cProposals.length)}
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {cProposals.map(p => row(p.title || p.name || "Proposal", p.status, p.status === "Accepted" ? "#10b981" : p.status === "Rejected" ? "#ef4444" : undefined))}
+                                    {cProposals.map(p => <React.Fragment key={p.id}>{row(p.title || p.name || "Proposal", p.status, p.status === "Accepted" ? "#10b981" : p.status === "Rejected" ? "#ef4444" : undefined)}</React.Fragment>)}
                                   </div>
                                 </div>
                               )}
@@ -283,7 +391,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 <div>
                                   {sec("Communications", cComms.length)}
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {cComms.slice(0, 4).map(c2 => row(`${c2.method || c2.type || "Comm"}${c2.date ? ` · ${c2.date}` : ""}`, c2.outcome || c2.status || ""))}
+                                    {cComms.slice(0, 4).map(c2 => <React.Fragment key={c2.id}>{row(`${c2.method || c2.type || "Comm"}${c2.date ? ` · ${c2.date}` : ""}`, c2.outcome || c2.status || "")}</React.Fragment>)}
                                   </div>
                                 </div>
                               )}
@@ -293,7 +401,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 <div>
                                   {sec("Support Tickets", cTickets.length)}
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {cTickets.map(t => row(t.title || t.subject || "Ticket", t.status, t.status === "Closed" || t.status === "Fixed" ? "#10b981" : t.priority === "Urgent" ? "#ef4444" : undefined))}
+                                    {cTickets.map(t => <React.Fragment key={t.id}>{row(t.title || t.subject || "Ticket", t.status, t.status === "Closed" || t.status === "Fixed" ? "#10b981" : t.priority === "Urgent" ? "#ef4444" : undefined)}</React.Fragment>)}
                                   </div>
                                 </div>
                               )}
@@ -303,7 +411,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 <div>
                                   {sec("Documents", cDocs.length)}
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {cDocs.map(d => row(d.name || d.title || "Doc", d.status || d.type || ""))}
+                                    {cDocs.map(d => <React.Fragment key={d.id}>{row(d.name || d.title || "Doc", d.status || d.type || "")}</React.Fragment>)}
                                   </div>
                                 </div>
                               )}
@@ -313,7 +421,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                                 <div>
                                   {sec("Events", cEvents.length)}
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {cEvents.slice(0, 4).map(e => row(e.title || e.name || "Event", e.date || e.start || ""))}
+                                    {cEvents.slice(0, 4).map(e => <React.Fragment key={e.id}>{row(e.title || e.name || "Event", e.date || e.start || "")}</React.Fragment>)}
                                   </div>
                                 </div>
                               )}
@@ -338,7 +446,7 @@ export default function ContactsTab({ contacts, setContacts, tags, addAudit, rol
                         </tr>
                       );
                     })()}
-                  </>
+                  </React.Fragment>
                 );
               })}
             </tbody>

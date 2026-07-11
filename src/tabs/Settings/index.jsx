@@ -54,7 +54,7 @@ export default function SettingsTab({ settings, setSettings, role, onResetData, 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Settings Header */}
-      <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "var(--text)" }}>Settings</h2>
           <p style={{ margin: "4px 0 0", fontSize: 14, color: "var(--text-muted)" }}>Configure your Founder OS workspace</p>
@@ -72,10 +72,10 @@ export default function SettingsTab({ settings, setSettings, role, onResetData, 
       </div>
 
       {/* Main Layout: Sidebar & Content Area */}
-      <div style={{ display: "flex", gap: 32, flex: 1, minHeight: 0 }}>
+      <div className="settings-layout" style={{ display: "flex", gap: 32, flex: 1, minHeight: 0 }}>
         
         {/* Left Sidebar Navigation */}
-        <div style={{ width: 220, flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+        <div className="settings-sidebar" style={{ width: 220, flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
           {SUB_TABS.map(t => {
             const isActive = activeTab === t.id;
             return (

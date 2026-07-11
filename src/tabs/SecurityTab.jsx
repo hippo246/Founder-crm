@@ -398,9 +398,9 @@ export default function SecurityTab({
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 32, alignItems: "flex-start", flex: 1 }}>
-        {/* Vertical Subtab Nav (Glassmorphic) */}
-        <div style={{ 
+      <div className="settings-layout" style={{ display: "flex", gap: 32, alignItems: "flex-start", flex: 1 }}>
+        {/* Subtab Nav (Responsive) */}
+        <div className="settings-sidebar" style={{ 
           width: 260, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6,
           background: "var(--glass-bg)", backdropFilter: "var(--glass-blur)",
           WebkitBackdropFilter: "var(--glass-blur)",
@@ -914,7 +914,7 @@ export default function SecurityTab({
                     .filter(a => auditFilterMod === "All" || a.module === auditFilterMod)
                     .filter(a => auditFilterSev === "All" || (a.severity || "info").toLowerCase() === auditFilterSev.toLowerCase())
                     .map((entry, idx) => (
-                    <tr key={entry.id || idx} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <tr key={`${entry.id || 'entry'}-${idx}`} style={{ borderBottom: "1px solid var(--border)" }}>
                       <td style={{ padding: "8px 12px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{entry.ts || entry.timestamp ? new Date(entry.ts || entry.timestamp).toLocaleString() : ""}</td>
                       <td style={{ padding: "8px 12px" }}>
                         <div style={{ fontWeight: 600 }}>{entry.action}</div>

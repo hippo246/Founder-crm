@@ -1,10 +1,48 @@
 import { useState, useEffect } from "react";
 import { toast } from "../../components/ui/UI.jsx";
 import { db, rtdb, auth, firebaseConfig, isFirebaseConfigured } from "../../lib/firebase.js";
-import { doc, getDoc, collection, getDocs, setDoc, updateDoc, query, where, addDoc, onSnapshot, orderBy, limit, getCountFromServer } from "firebase/firestore";
-import { ref, set, get } from "firebase/database";
+import { doc, getDoc, collection, getDocs, setDoc, updateDoc, query, where, addDoc, onSnapshot, orderBy, limit, getCountFromServer, writeBatch } from "firebase/firestore";
+import { ref, set as firebaseSet, get } from "firebase/database";
+
+// Collection options for explorer
+const COLLECTIONS = [
+  { key: "contacts", label: "Contacts" },
+  { key: "leads", label: "Leads" },
+  { key: "projects", label: "Projects" },
+  { key: "tasks", label: "Tasks" },
+  { key: "followUps", label: "Follow-Ups" },
+  { key: "notes", label: "Notes" },
+  { key: "documents", label: "Documents" },
+  { key: "invoices", label: "Invoices" },
+  { key: "payments", label: "Payments" },
+  { key: "proposals", label: "Proposals" },
+  { key: "communications", label: "Communications" },
+  { key: "calendarEvents", label: "Calendar Events" },
+  { key: "supportTickets", label: "Support Tickets" },
+  { key: "templates", label: "WhatsApp Templates" },
+  { key: "emailTemplates", label: "Email Templates" },
+  { key: "promptHistory", label: "Prompt History" },
+  { key: "projectLogs", label: "Project Logs" },
+  { key: "roadmapItems", label: "Roadmap Items" },
+  { key: "tags", label: "Tags" },
+  { key: "customFields", label: "Custom Fields" },
+  { key: "auditLogs", label: "Audit Logs" },
+];
+
+// Tabs for the interface
+const TABS = [
+  { id: "overview", label: "Overview", icon: "📊" },
+  { id: "explorer", label: "Explorer", icon: "🔍" },
+  { id: "diagnostics", label: "Diagnostics", icon: "🔧" },
+  { id: "rules", label: "Security Rules", icon: "🔒" },
+  { id: "backup", label: "Backup & Sync", icon: "💾" },
+];
 
 export default function FirebaseSection({ role, user, currentWorkspaceId, currentWorkspace, memberRole }) {
+  // Tab state
+  const [activeTab, setActiveTab] = useState("overview");
+  
+  // Existing state
   const [syncStatus, setSyncStatus] = useState("idle");
   const [rtdbStatus, setRtdbStatus] = useState("idle");
   const [userCount, setUserCount] = useState(null);
@@ -17,15 +55,17 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
   const [repairing, setRepairing] = useState(false);
   const [liveEvents, setLiveEvents] = useState([]);
   const [activeListeners, setActiveListeners] = useState(0);
-
-  const [explorerCollection, setExplorerCollection] = useState("leads");
+  const [explorerCollection, setExplorerCollection] = useState("contacts");
   const [explorerData, setExplorerData] = useState(null);
   const [exploring, setExploring] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
   const [explorerError, setExplorerError] = useState(null);
   const [metrics, setMetrics] = useState({ reads: 0, writes: 0, syncPercent: 0, syncedAt: null });
-  const [networkOnline, setNetworkOnline] = useState(navigator.onLine);
+  const [networkOnline, setNetworkOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   const [testResults, setTestResults] = useState({});
+  const [collectionCounts, setCollectionCounts] = useState({});
+  const [loadingCounts, setLoadingCounts] = useState(false);
+  const [exportingAll, setExportingAll] = useState(false);
 
   useEffect(() => {
     const handleOnline = () => setNetworkOnline(true);
@@ -38,7 +78,6 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
     };
   }, []);
 
-  // Load real metrics from RTDB syncStatus on mount
   useEffect(() => {
     if (!currentWorkspaceId || !rtdb || !user?.uid) return;
     const syncRef = ref(rtdb, `workspaceLive/${currentWorkspaceId}/syncStatus/${user.uid}`);
@@ -74,6 +113,28 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
     };
   }, [currentWorkspaceId, role]);
 
+  const loadAllCollectionCounts = async () => {
+    if (!currentWorkspaceId) return;
+    setLoadingCounts(true);
+    const counts = {};
+    for (const coll of COLLECTIONS) {
+      try {
+        const colRef = collection(db, "workspaces", currentWorkspaceId, coll.key);
+        const snapshot = await getCountFromServer(colRef);
+        counts[coll.key] = snapshot.data().count;
+      } catch {
+        try {
+          const snapshot = await getDocs(colRef);
+          counts[coll.key] = snapshot.size;
+        } catch {
+          counts[coll.key] = "—";
+        }
+      }
+    }
+    setCollectionCounts(counts);
+    setLoadingCounts(false);
+  };
+
   const checkFirebaseStatus = async () => {
     setLoading(true);
     try {
@@ -96,7 +157,7 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
     setLoading(true);
     try {
       const testRef = ref(rtdb, "test");
-      await set(testRef, { test: true, timestamp: Date.now() });
+      await firebaseSet(testRef, { test: true, timestamp: Date.now() });
       const snapshot = await get(testRef);
       if (snapshot.exists()) {
         setRtdbStatus("connected");
@@ -118,7 +179,6 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
     setAuthLoading(true);
     try {
       if (auth.currentUser) {
-        // Force token refresh to verify session is truly valid
         const token = await auth.currentUser.getIdToken(true);
         const tokenPayload = JSON.parse(atob(token.split(".")[1]));
         const expiresAt = new Date(tokenPayload.exp * 1000).toLocaleTimeString();
@@ -140,14 +200,12 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
     setLoading(true);
     try {
       const usersRef = collection(db, "users");
-      // Use server-side count — no document bandwidth consumed
       const snapshot = await getCountFromServer(usersRef);
       const count = snapshot.data().count;
       setUserCount(count);
       setMetrics(prev => ({ ...prev, reads: prev.reads + 1 }));
       toast(`Found ${count} users in Firebase`, "success");
     } catch (error) {
-      // Fallback to getDocs if getCountFromServer is not supported (older SDK)
       try {
         const snapshot = await getDocs(collection(db, "users"));
         setUserCount(snapshot.size);
@@ -168,8 +226,9 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
     try {
       const colRef = collection(db, "workspaces", currentWorkspaceId, explorerCollection);
       const snapshot = await getDocs(colRef);
-      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setExplorerData(data);
+      setMetrics(prev => ({ ...prev, reads: prev.reads + 1 }));
       toast(`Fetched ${data.length} records from ${explorerCollection}`, "success");
     } catch (e) {
       setExplorerError(e.message);
@@ -182,31 +241,27 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
   const forceSyncAll = async () => {
     if (!currentWorkspaceId) return;
     setSyncingAll(true);
-    const collections = ["leads", "contacts", "projects", "tasks", "invoices", "roadmap"];
     let totalSynced = 0;
     let errors = [];
     try {
-      for (const col of collections) {
+      for (const coll of COLLECTIONS) {
         try {
-          const snap = await getDocs(collection(db, "workspaces", currentWorkspaceId, col));
+          const snap = await getDocs(collection(db, "workspaces", currentWorkspaceId, coll.key));
           totalSynced += snap.size;
         } catch (colErr) {
-          errors.push(`${col}: ${colErr.message}`);
+          errors.push(`${coll.key}: ${colErr.message}`);
         }
       }
-      // Write a sync status marker to RTDB
       if (rtdb) {
         try {
-          await set(ref(rtdb, `workspaceLive/${currentWorkspaceId}/syncStatus/${user?.uid}`), {
+          await firebaseSet(ref(rtdb, `workspaceLive/${currentWorkspaceId}/syncStatus/${user?.uid}`), {
             lastSync: Date.now(),
             totalRecords: totalSynced,
-            collections: collections.join(","),
           });
         } catch (rtdbErr) {
           console.warn("RTDB sync status write failed:", rtdbErr);
         }
       }
-      // Write audit log
       try {
         await addDoc(collection(db, "workspaces", currentWorkspaceId, "auditLogs"), {
           workspaceId: currentWorkspaceId,
@@ -217,7 +272,7 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
           action: "ForceSyncAll",
           recordType: "Workspace",
           recordId: currentWorkspaceId,
-          description: `Synced ${totalSynced} records across ${collections.length} collections${errors.length ? ` (${errors.length} errors)` : ""}`,
+          description: `Synced ${totalSynced} records across ${COLLECTIONS.length} collections${errors.length ? ` (${errors.length} errors)` : ""}`,
           timestamp: new Date().toISOString(),
         });
       } catch (_) {}
@@ -225,12 +280,36 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
       if (errors.length) {
         toast(`Synced ${totalSynced} records. ${errors.length} collection(s) had errors.`, "error");
       } else {
-        toast(`Force synced ${totalSynced} records across ${collections.length} collections`, "success");
+        toast(`Force synced ${totalSynced} records across ${COLLECTIONS.length} collections`, "success");
       }
     } catch (e) {
       toast("Sync failed: " + e.message, "error");
     } finally {
       setSyncingAll(false);
+    }
+  };
+
+  const exportAllWorkspaceData = async () => {
+    if (!currentWorkspaceId) return;
+    setExportingAll(true);
+    try {
+      const data = {};
+      for (const coll of COLLECTIONS) {
+        const snap = await getDocs(collection(db, "workspaces", currentWorkspaceId, coll.key));
+        data[coll.key] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `workspace-${currentWorkspaceId}-backup-${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("Workspace backup successful!", "success");
+    } catch (e) {
+      toast("Backup failed: " + e.message, "error");
+    } finally {
+      setExportingAll(false);
     }
   };
 
@@ -262,15 +341,12 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
         return;
       }
 
-      // Check if user profile exists
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userDoc = await getDoc(doc(db, "users", user.uid));
       results.userProfileExists = userDoc.exists();
 
-      // Check workspace owner match
       results.ownerIdMatches = currentWorkspace?.ownerId === user.uid;
 
-      // Check member doc
-      const memberDoc = await getDoc(doc(db, 'workspaces', currentWorkspaceId, 'members', user.uid));
+      const memberDoc = await getDoc(doc(db, "workspaces", currentWorkspaceId, "members", user.uid));
       results.memberExists = memberDoc.exists();
       if (memberDoc.exists()) {
         const memberData = memberDoc.data();
@@ -278,7 +354,6 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
         results.memberActive = memberData.active === true;
       }
 
-      // Check old arrays
       if (currentWorkspace?.adminIds?.includes(user.uid)) results.inAdminIds = true;
       if (currentWorkspace?.staffIds?.includes(user.uid)) results.inStaffIds = true;
       if (currentWorkspace?.viewerIds?.includes(user.uid)) results.inViewerIds = true;
@@ -297,7 +372,7 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
   const testReadWorkspace = async () => {
     setLoading(true);
     try {
-      const wsDoc = await getDoc(doc(db, 'workspaces', currentWorkspaceId));
+      const wsDoc = await getDoc(doc(db, "workspaces", currentWorkspaceId));
       setMetrics(prev => ({ ...prev, reads: prev.reads + 1 }));
       if (wsDoc.exists()) {
         setTestResults(prev => ({ ...prev, readWorkspace: "pass" }));
@@ -317,7 +392,7 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
   const testReadSettings = async () => {
     setLoading(true);
     try {
-      const settingsDoc = await getDoc(doc(db, 'workspaces', currentWorkspaceId, 'data', 'settings'));
+      const settingsDoc = await getDoc(doc(db, "workspaces", currentWorkspaceId, "data", "settings"));
       setMetrics(prev => ({ ...prev, reads: prev.reads + 1 }));
       setTestResults(prev => ({ ...prev, readSettings: "pass" }));
       if (settingsDoc.exists()) {
@@ -336,7 +411,7 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
   const testReadContacts = async () => {
     setLoading(true);
     try {
-      const contactsDoc = await getDoc(doc(db, 'workspaces', currentWorkspaceId, 'data', 'contacts'));
+      const contactsDoc = await getDoc(doc(db, "workspaces", currentWorkspaceId, "data", "contacts"));
       setMetrics(prev => ({ ...prev, reads: prev.reads + 1 }));
       setTestResults(prev => ({ ...prev, readContacts: "pass" }));
       if (contactsDoc.exists()) {
@@ -360,7 +435,7 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
     setLoading(true);
     setTestResults(prev => ({ ...prev, writeTestDoc: null }));
     try {
-      await setDoc(doc(db, 'workspaces', currentWorkspaceId, 'data', '_permissionTest'), {
+      await setDoc(doc(db, "workspaces", currentWorkspaceId, "data", "_permissionTest"), {
         test: true,
         timestamp: new Date().toISOString(),
         uid: user.uid
@@ -368,8 +443,7 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
       setMetrics(prev => ({ ...prev, writes: prev.writes + 1 }));
       setTestResults(prev => ({ ...prev, writeTestDoc: "pass" }));
       toast("✓ Can write test doc", "success");
-      // Clean up
-      await setDoc(doc(db, 'workspaces', currentWorkspaceId, 'data', '_permissionTest'), { test: false }, { merge: true });
+      await setDoc(doc(db, "workspaces", currentWorkspaceId, "data", "_permissionTest"), { test: false }, { merge: true });
       setMetrics(prev => ({ ...prev, writes: prev.writes + 1 }));
     } catch (error) {
       setTestResults(prev => ({ ...prev, writeTestDoc: "fail" }));
@@ -388,14 +462,13 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
         return;
       }
 
-      // 1. Create user profile if missing
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userDoc = await getDoc(doc(db, "users", user.uid));
       if (!userDoc.exists()) {
-        await setDoc(doc(db, 'users', user.uid), {
+        await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           email: user.email,
-          displayName: user.displayName || user.email?.split('@')[0] || 'User',
-          role: 'User',
+          displayName: user.displayName || user.email?.split("@")[0] || "User",
+          role: "User",
           active: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -404,12 +477,11 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
         toast("✓ Created user profile", "success");
       }
 
-      // 2. Set workspace ownerId if no owner or current user is first
-      const wsDoc = await getDoc(doc(db, 'workspaces', currentWorkspaceId));
+      const wsDoc = await getDoc(doc(db, "workspaces", currentWorkspaceId));
       if (wsDoc.exists()) {
         const wsData = wsDoc.data();
         if (!wsData.ownerId || wsData.ownerId === user.uid) {
-          await updateDoc(doc(db, 'workspaces', currentWorkspaceId), {
+          await updateDoc(doc(db, "workspaces", currentWorkspaceId), {
             ownerId: user.uid,
             updatedAt: new Date().toISOString()
           });
@@ -417,13 +489,12 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
         }
       }
 
-      // 3. Create member doc as Owner
-      await setDoc(doc(db, 'workspaces', currentWorkspaceId, 'members', user.uid), {
+      await setDoc(doc(db, "workspaces", currentWorkspaceId, "members", user.uid), {
         uid: user.uid,
         userId: user.uid,
         email: user.email,
-        displayName: user.displayName || user.email?.split('@')[0] || 'User',
-        role: 'Owner',
+        displayName: user.displayName || user.email?.split("@")[0] || "User",
+        role: "Owner",
         active: true,
         permissions: null,
         modulePermissions: null,
@@ -432,40 +503,38 @@ export default function FirebaseSection({ role, user, currentWorkspaceId, curren
       });
       toast("✓ Created member doc as Owner", "success");
 
-      // 4. Update RTDB membership mirror (non-blocking)
       try {
         const { updateMembershipMirror } = await import("../../lib/realtime.js");
         await updateMembershipMirror(currentWorkspaceId, {
           uid: user.uid,
-          role: 'Owner',
+          role: "Owner",
           active: true
         });
         toast("✓ Updated RTDB mirror", "success");
       } catch (error) {
-        console.warn('RTDB mirror update failed:', error);
+        console.warn("RTDB mirror update failed:", error);
       }
 
-      // 5. Add audit log
       try {
-        const auditRef = collection(db, 'workspaces', currentWorkspaceId, 'auditLogs');
+        const auditRef = collection(db, "workspaces", currentWorkspaceId, "auditLogs");
         await addDoc(auditRef, {
           workspaceId: currentWorkspaceId,
           userId: user.uid,
           userName: user.displayName || user.email,
-          role: 'Owner',
-          module: 'System',
-          action: 'Repair',
-          recordType: 'Membership',
+          role: "Owner",
+          module: "System",
+          action: "Repair",
+          recordType: "Membership",
           recordId: user.uid,
-          description: 'Owner access repair completed',
+          description: "Owner access repair completed",
           timestamp: new Date().toISOString()
         });
       } catch (error) {
-        console.warn('Audit log failed:', error);
+        console.warn("Audit log failed:", error);
       }
 
       toast("Owner access repair completed", "success");
-      runDiagnostics(); // Refresh diagnostics
+      runDiagnostics();
     } catch (error) {
       toast("Repair failed: " + error.message, "error");
     } finally {
@@ -483,11 +552,11 @@ service cloud.firestore {
     }
     
     function getWorkspace(workspaceId) {
-      return get(/databases/$(database)/documents/workspaces/$(workspaceId)).data;
+      return get(/databases/${database}/documents/workspaces/${workspaceId}).data;
     }
     
     function getMember(workspaceId, userId) {
-      let memberPath = /databases/$(database)/documents/workspaces/$(workspaceId)/members/$(userId);
+      let memberPath = /databases/${database}/documents/workspaces/${workspaceId}/members/${userId};
       let member = exists(memberPath) ? get(memberPath).data : null;
       return member;
     }
@@ -711,11 +780,36 @@ service cloud.firestore {
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
-      
-      {/* ── FIREBASE CONTROL CENTER ── */}
-      <div style={{ background: "var(--glass-bg)", backdropFilter: "var(--glass-blur)", WebkitBackdropFilter: "var(--glass-blur)", border: "1px solid var(--glass-border)", borderRadius: "var(--r-xl)", padding: 20, gridColumn: "1 / -1", boxShadow: "var(--shadow-md)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Tab Navigation */}
+      <div style={{ display: "flex", gap: 8, background: "var(--surface)", borderRadius: "var(--r-lg)", padding: 6, border: "1px solid var(--border)", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              flex: "0 0 auto",
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: activeTab === tab.id ? "var(--accent)" : "transparent",
+              color: activeTab === tab.id ? "white" : "var(--text)",
+              fontWeight: activeTab === tab.id ? 600 : 400,
+              cursor: "pointer",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 6
+            }}
+          >
+            {tab.icon} {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Live Control Center (always visible) */}
+      <div style={{ background: "var(--glass-bg)", backdropFilter: "var(--glass-blur)", WebkitBackdropFilter: "var(--glass-blur)", border: "1px solid var(--glass-border)", borderRadius: "var(--r-xl)", padding: 20, boxShadow: "var(--shadow-md)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", boxShadow: "0 0 8px var(--success)" }} />
@@ -723,7 +817,7 @@ service cloud.firestore {
             </h3>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}>Real-time streaming and metrics</p>
           </div>
-          <div style={{ display: "flex", gap: 16, fontSize: 12 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
             <div style={{ background: "var(--surface)", padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
               <span style={{ color: "var(--text-muted)" }}>Active Listeners: </span>
               <strong style={{ color: "var(--accent)" }}>{activeListeners}</strong>
@@ -732,63 +826,117 @@ service cloud.firestore {
               <span style={{ color: "var(--text-muted)" }}>Live Events: </span>
               <strong>{liveEvents.length}</strong>
             </div>
+            <div style={{ background: "var(--surface)", padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <span style={{ color: "var(--text-muted)" }}>Reads: </span>
+              <strong style={{ color: "var(--accent)" }}>{metrics.reads}</strong>
+            </div>
+            <div style={{ background: "var(--surface)", padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <span style={{ color: "var(--text-muted)" }}>Writes: </span>
+              <strong style={{ color: "var(--purple)" }}>{metrics.writes}</strong>
+            </div>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 16, height: 200 }}>
-          {/* Live Activity Feed */}
-          <div style={{ flex: 1, background: "var(--background)", borderRadius: 8, border: "1px solid var(--border)", padding: 12, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 4 }}>Real-Time Activity Stream</div>
-            {liveEvents.length === 0 && <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>Waiting for database events...</div>}
-            {liveEvents.map((ev, i) => (
-              <div key={`stream-${ev.id || i}`} style={{ fontSize: 12, display: "flex", gap: 12, paddingBottom: 8, borderBottom: "1px solid var(--border)", animation: "slideIn 0.3s ease-out" }}>
-                <div style={{ color: "var(--text-muted)", width: 60, flexShrink: 0 }}>{new Date(ev.timestamp).toLocaleTimeString([], { hour12: false })}</div>
-                <div style={{ color: "var(--accent)", fontWeight: 500, width: 80, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{ev.userName || "System"}</div>
-                <div style={{ flex: 1 }}>{ev.action} {ev.module} <span style={{ color: "var(--text-muted)" }}>({ev.description})</span></div>
-              </div>
-            ))}
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto", background: "var(--background)", borderRadius: 8, border: "1px solid var(--border)", padding: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>Real-time Activity Stream</div>
+          {liveEvents.length === 0 && <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>Waiting for database events...</div>}
+          {liveEvents.map((ev, i) => (
+              <div key={`stream-${i}-${ev.id || i}`} style={{ fontSize: 12, display: "flex", gap: 8, paddingBottom: 8, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+              <div style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>{new Date(ev.timestamp).toLocaleTimeString([], { hour12: false })}</div>
+              <div style={{ color: "var(--accent)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.userName || "System"}</div>
+              <div style={{ flex: 1 }}>{ev.action} {ev.module} <span style={{ color: "var(--text-muted)" }}>({ev.description})</span></div>
+            </div>
+          ))}
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24, gridColumn: "1 / -1" }}>
-        {/* Live Feed */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: activeListeners > 0 ? "var(--success)" : "var(--danger)", boxShadow: activeListeners > 0 ? "0 0 8px var(--success)" : "none" }} />
-              Live Audit Feed
-            </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{liveEvents.length} events</div>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, minHeight: 200, maxHeight: 400 }}>
-            {liveEvents.length === 0 && <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", marginTop: 40 }}>No recent events</div>}
-            {liveEvents.map((ev, i) => (
-              <div key={`feed-${ev.id || i}`} style={{ fontSize: 12, display: "flex", gap: 12, paddingBottom: 8, borderBottom: "1px solid var(--border)", animation: "slideIn 0.3s ease-out" }}>
-                <div style={{ color: "var(--text-muted)", width: 60, flexShrink: 0 }}>{new Date(ev.timestamp).toLocaleTimeString([], { hour12: false })}</div>
-                <div style={{ color: "var(--accent)", fontWeight: 500, width: 80, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{ev.userName || "System"}</div>
-                <div style={{ flex: 1 }}>{ev.action} {ev.module} <span style={{ color: "var(--text-muted)" }}>({ev.description})</span></div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Sync & Explorer Tools */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-          
-          {/* Dashboard Metrics */}
+      {/* Tab Content */}
+      {activeTab === "overview" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Firebase Configuration</div>
+            <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+              <div><span style={{ color: "var(--text-muted)" }}>Project ID: </span><strong>{firebaseConfig.projectId || "Not configured"}</strong></div>
+              <div><span style={{ color: "var(--text-muted)" }}>Auth Domain: </span><strong>{firebaseConfig.authDomain || "Not configured"}</strong></div>
+              <div><span style={{ color: "var(--text-muted)" }}>Configured: </span><strong style={{ color: isFirebaseConfigured() ? "var(--success)" : "var(--danger)" }}>{isFirebaseConfigured() ? "Yes" : "No"}</strong></div>
+            </div>
+          </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Authentication Status</div>
+            <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+              <div><span style={{ color: "var(--text-muted)" }}>User UID: </span><strong>{user?.uid || "—"}</strong></div>
+              <div><span style={{ color: "var(--text-muted)" }}>Email: </span><strong>{user?.email || "—"}</strong></div>
+              <div><span style={{ color: "var(--text-muted)" }}>Display Name: </span><strong>{user?.displayName || "—"}</strong></div>
+            </div>
+            <button
+              onClick={checkAuthSession}
+              disabled={authLoading}
+              style={{
+                marginTop: 12, padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8,
+                border: `1px solid ${testResults.authSession === "pass" ? "var(--success)" : testResults.authSession === "fail" ? "var(--danger)" : "var(--border)"}`,
+                background: testResults.authSession === "pass" ? "rgba(34,197,94,0.08)" : testResults.authSession === "fail" ? "rgba(239,68,68,0.08)" : "var(--surface)",
+                cursor: authLoading ? "not-allowed" : "pointer",
+                color: testResults.authSession === "pass" ? "var(--success)" : testResults.authSession === "fail" ? "var(--danger)" : "var(--text)",
+                width: "100%"
+              }}
+            >
+              {authLoading ? "Checking..." : testResults.authSession === "pass" ? "✓ Auth Session Valid" : testResults.authSession === "fail" ? "✗ Auth Failed" : "Test Auth Session"}
+            </button>
+          </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Firestore Database</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: syncStatus === "connected" ? "#22c55e" : syncStatus === "error" ? "#ef4444" : "#94a3b8" }} />
+              <span style={{ fontSize: 13, color: "var(--text)" }}>{syncStatus === "connected" ? "Connected" : syncStatus === "error" ? "Error" : "Not tested"}</span>
+            </div>
+            {firestoreError && <div style={{ fontSize: 11, color: "var(--danger)", marginBottom: 8 }}>{firestoreError}</div>}
+            {lastSyncTime && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Last sync: {new Date(lastSyncTime).toLocaleString()}</div>}
+            <button onClick={checkFirebaseStatus} disabled={loading} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: loading ? "not-allowed" : "pointer", width: "100%" }}>
+              {loading ? "Testing..." : "Test Firestore"}
+            </button>
+          </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Realtime Database</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: rtdbStatus === "connected" ? "#22c55e" : rtdbStatus === "error" ? "#ef4444" : "#94a3b8" }} />
+              <span style={{ fontSize: 13, color: "var(--text)" }}>{rtdbStatus === "connected" ? "Connected" : rtdbStatus === "error" ? "Error" : "Not tested"}</span>
+            </div>
+            {rtdbError && <div style={{ fontSize: 11, color: "var(--danger)", marginBottom: 8 }}>{rtdbError}</div>}
+            <button onClick={checkRTDBStatus} disabled={loading} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: loading ? "not-allowed" : "pointer", width: "100%" }}>
+              {loading ? "Testing..." : "Test RTDB"}
+            </button>
+          </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Current Workspace</div>
+            <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+              <div><span style={{ color: "var(--text-muted)" }}>Workspace ID: </span><strong>{currentWorkspaceId || "—"}</strong></div>
+              <div><span style={{ color: "var(--text-muted)" }}>Workspace Name: </span><strong>{currentWorkspace?.name || "—"}</strong></div>
+              <div><span style={{ color: "var(--text-muted)" }}>Your Role: </span><strong>{memberRole || "—"}</strong></div>
+            </div>
+          </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Network Status</div>
+            <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+              <div><span style={{ color: "var(--text-muted)" }}>Online: </span><strong style={{ color: networkOnline ? "var(--success)" : "var(--danger)" }}>{networkOnline ? "Yes" : "No"}</strong></div>
+              <div><span style={{ color: "var(--text-muted)" }}>Cache: </span><strong>IndexedDB enabled</strong></div>
+            </div>
+          </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20, gridColumn: "1 / -1" }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Database Health & Metrics</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div style={{ background: "var(--background)", padding: 12, borderRadius: 8, border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Reads (this session)</div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)" }}>{metrics.reads}</div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>Live counter</div>
               </div>
               <div style={{ background: "var(--background)", padding: 12, borderRadius: 8, border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Writes (this session)</div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: "var(--purple)" }}>{metrics.writes}</div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>Live counter</div>
               </div>
               <div style={{ background: "var(--background)", padding: 12, borderRadius: 8, border: "1px solid var(--border)", gridColumn: "1 / -1" }}>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
@@ -809,243 +957,183 @@ service cloud.firestore {
               {syncingAll ? "Syncing..." : "Force Sync Workspace to Firestore"}
             </button>
           </div>
+        </div>
+      )}
 
-          {/* Collection Explorer */}
+      {activeTab === "explorer" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Collection Explorer</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <select 
-                style={{ flex: 1, padding: "8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--text)" }}
-                value={explorerCollection}
-                onChange={e => setExplorerCollection(e.target.value)}
-              >
-                <option value="leads">Leads</option>
-                <option value="contacts">Contacts</option>
-                <option value="projects">Projects</option>
-                <option value="tasks">Tasks</option>
-                <option value="invoices">Invoices</option>
-                <option value="roadmap">Roadmap</option>
-                <option value="auditLogs">Audit Logs</option>
-              </select>
-              <button onClick={fetchCollectionData} disabled={exploring} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: exploring ? "wait" : "pointer" }}>
-                {exploring ? "Fetching..." : "Fetch"}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>Collection Explorer</div>
+              <button onClick={loadAllCollectionCounts} disabled={loadingCounts} style={{ padding: "6px 12px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", cursor: loadingCounts ? "not-allowed" : "pointer" }}>
+                {loadingCounts ? "Loading Counts..." : "Refresh All Counts"}
               </button>
             </div>
-            
+
+            {/* Collection list with counts */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8, marginBottom: 16 }}>
+              {COLLECTIONS.map(coll => (
+                <button
+                  key={coll.key}
+                  onClick={() => { setExplorerCollection(coll.key); fetchCollectionData(); }}
+                  style={{
+                    padding: 10,
+                    borderRadius: 8,
+                    border: `1px solid ${explorerCollection === coll.key ? "var(--accent)" : "var(--border)"}`,
+                    background: explorerCollection === coll.key ? "rgba(79,70,229,0.08)" : "var(--background)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontSize: 12,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center"
+                  }}
+                >
+                  <span style={{ color: explorerCollection === coll.key ? "var(--accent)" : "var(--text)" }}>{coll.label}</span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+                    {collectionCounts[coll.key] ?? "—"}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Explorer content */}
             {explorerError && <div style={{ fontSize: 11, color: "var(--danger)", marginBottom: 8 }}>{explorerError}</div>}
             
             {explorerData && (
-              <div style={{ background: "var(--background)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, maxHeight: 200, overflowY: "auto" }}>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+              <div style={{ background: "var(--background)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, maxHeight: "60vh", overflowY: "auto" }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>{explorerData.length} records found</span>
                   <button onClick={() => setExplorerData(null)} style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 11 }}>Clear</button>
                 </div>
                 {explorerData.length === 0 ? (
                   <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 20 }}>Collection is empty</div>
                 ) : (
-                  <pre style={{ margin: 0, fontSize: 11, color: "var(--text)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                    {JSON.stringify(explorerData.slice(0, 5), null, 2)}
-                    {explorerData.length > 5 && "\n\n... and " + (explorerData.length - 5) + " more"}
-                  </pre>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {explorerData.slice(0, 20).map((item, idx) => (
+                      <div key={`explorer-${idx}-${item.id || idx}`} style={{ padding: 8, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 11, overflow: "hidden" }}>
+                        <div style={{ fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>ID: {item.id}</div>
+                        <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", color: "var(--text-muted)" }}>{JSON.stringify(item, null, 2)}</pre>
+                      </div>
+                    ))}
+                    {explorerData.length > 20 && <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "8px 0" }}>... and {explorerData.length - 20} more records</div>}
+                  </div>
                 )}
               </div>
             )}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Firebase Config */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Firebase Configuration</div>
-        <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div><span style={{ color: "var(--text-muted)" }}>Project ID:</span> <strong>{firebaseConfig.projectId || "Not configured"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Auth Domain:</span> <strong>{firebaseConfig.authDomain || "Not configured"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Configured:</span> <strong style={{ color: isFirebaseConfigured() ? "var(--success)" : "var(--danger)" }}>{isFirebaseConfigured() ? "Yes" : "No"}</strong></div>
-        </div>
-      </div>
-
-      {/* Auth Status */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Authentication Status</div>
-        <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div><span style={{ color: "var(--text-muted)" }}>User UID:</span> <strong>{user?.uid || "—"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Email:</span> <strong>{user?.email || "—"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Display Name:</span> <strong>{user?.displayName || "—"}</strong></div>
-        </div>
-        <button
-          onClick={checkAuthSession}
-          disabled={authLoading}
-          style={{
-            marginTop: 12, padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8,
-            border: `1px solid ${testResults.authSession === "pass" ? "var(--success)" : testResults.authSession === "fail" ? "var(--danger)" : "var(--border)"}`,
-            background: testResults.authSession === "pass" ? "rgba(34,197,94,0.08)" : testResults.authSession === "fail" ? "rgba(239,68,68,0.08)" : "var(--surface)",
-            cursor: authLoading ? "not-allowed" : "pointer",
-            color: testResults.authSession === "pass" ? "var(--success)" : testResults.authSession === "fail" ? "var(--danger)" : "var(--text)"
-          }}
-        >
-          {authLoading ? "Checking..." : testResults.authSession === "pass" ? "✓ Auth Session Valid" : testResults.authSession === "fail" ? "✗ Auth Failed" : "Test Auth Session"}
-        </button>
-      </div>
-
-      {/* Firestore Status */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Firestore Database</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: syncStatus === "connected" ? "#22c55e" : syncStatus === "error" ? "#ef4444" : "#94a3b8" }} />
-          <span style={{ fontSize: 13, color: "var(--text)" }}>{syncStatus === "connected" ? "Connected" : syncStatus === "error" ? "Error" : "Not tested"}</span>
-        </div>
-        {firestoreError && <div style={{ fontSize: 11, color: "var(--danger)", marginBottom: 8 }}>{firestoreError}</div>}
-        {lastSyncTime && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Last sync: {new Date(lastSyncTime).toLocaleString()}</div>}
-        <button onClick={checkFirebaseStatus} disabled={loading} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: loading ? "not-allowed" : "pointer" }}>
-          {loading ? "Testing..." : "Test Firestore"}
-        </button>
-      </div>
-
-      {/* RTDB Status */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Realtime Database</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: rtdbStatus === "connected" ? "#22c55e" : rtdbStatus === "error" ? "#ef4444" : "#94a3b8" }} />
-          <span style={{ fontSize: 13, color: "var(--text)" }}>{rtdbStatus === "connected" ? "Connected" : rtdbStatus === "error" ? "Error" : "Not tested"}</span>
-        </div>
-        {rtdbError && <div style={{ fontSize: 11, color: "var(--danger)", marginBottom: 8 }}>{rtdbError}</div>}
-        <button onClick={checkRTDBStatus} disabled={loading} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: loading ? "not-allowed" : "pointer" }}>
-          {loading ? "Testing..." : "Test RTDB"}
-        </button>
-      </div>
-
-      {/* Workspace Info */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Current Workspace</div>
-        <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div><span style={{ color: "var(--text-muted)" }}>Workspace ID:</span> <strong>{currentWorkspaceId || "—"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Workspace Name:</span> <strong>{currentWorkspace?.name || "—"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Your Role:</span> <strong>{memberRole || "—"}</strong></div>
-        </div>
-      </div>
-
-      {/* Data Mode */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Data Mode</div>
-        <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div><span style={{ color: "var(--text-muted)" }}>Firestore:</span> <strong>Permanent records</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Realtime DB:</span> <strong>Live state</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Local Cache:</span> <strong>Fallback</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Structure:</span> <strong>Transitional (old + new)</strong></div>
-        </div>
-      </div>
-
-      {/* RTDB Features */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>RTDB Live Features</div>
-        <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div><span style={{ color: "var(--text-muted)" }}>Presence:</span> <strong style={{ color: rtdbStatus === "connected" ? "var(--success)" : "var(--text-muted)" }}>{rtdbStatus === "connected" ? "Active" : "Not wired"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Sessions:</span> <strong style={{ color: rtdbStatus === "connected" ? "var(--success)" : "var(--text-muted)" }}>{rtdbStatus === "connected" ? "Active" : "Not wired"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Notifications:</span> <strong style={{ color: rtdbStatus === "connected" ? "var(--success)" : "var(--text-muted)" }}>{rtdbStatus === "connected" ? "Active" : "Not wired"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Locks:</span> <strong style={{ color: rtdbStatus === "connected" ? "var(--success)" : "var(--text-muted)" }}>{rtdbStatus === "connected" ? "Active" : "Not wired"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Editing:</span> <strong style={{ color: rtdbStatus === "connected" ? "var(--success)" : "var(--text-muted)" }}>{rtdbStatus === "connected" ? "Active" : "Not wired"}</strong></div>
-        </div>
-      </div>
-
-      {/* Network Status */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Network Status</div>
-        <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div><span style={{ color: "var(--text-muted)" }}>Online:</span> <strong style={{ color: networkOnline ? "var(--success)" : "var(--danger)" }}>{networkOnline ? "Yes" : "No"}</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Cache:</span> <strong>IndexedDB enabled</strong></div>
-          <div><span style={{ color: "var(--text-muted)" }}>Migration:</span> <strong>Not run</strong></div>
-        </div>
-      </div>
-
-      {/* User Management */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>User Management</div>
-        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>Total users: {userCount !== null ? userCount : "Unknown"}</div>
-        <button onClick={getUserCount} disabled={loading} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: loading ? "not-allowed" : "pointer" }}>
-          {loading ? "Loading..." : "Refresh User Count"}
-        </button>
-      </div>
-
-      {/* Rules Export */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20, gridColumn: "1 / -1" }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Security Rules Export</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-          Copy rules to paste into Firebase Console. Firestore rules go to Firestore Database → Rules. RTDB rules go to Realtime Database → Rules.
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={copyFirestoreRules} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
-            Copy Firestore Rules
-          </button>
-          <button onClick={copyRTDBRules} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
-            Copy RTDB Rules
-          </button>
-        </div>
-      </div>
-
-      {/* Firestore Access Diagnostics */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20, gridColumn: "1 / -1" }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Firestore Access Diagnostics</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-          Test your Firestore permissions and repair access if needed.
-        </div>
-        
-        {/* Test Buttons */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-          {[
-            { key: null, label: loading ? "Running..." : "Run Diagnostics", onClick: runDiagnostics, disabled: loading },
-            { key: "readWorkspace", label: "Read Workspace", onClick: testReadWorkspace, disabled: loading },
-            { key: "readSettings", label: "Read Settings", onClick: testReadSettings, disabled: loading },
-            { key: "readContacts", label: "Read Contacts", onClick: testReadContacts, disabled: loading },
-            { key: "writeTestDoc", label: "Write Test Doc", onClick: testWriteTestDoc, disabled: loading },
-          ].map(({ key, label, onClick, disabled }) => {
-            const result = key ? testResults[key] : null;
-            const statusColor = result === "pass" ? "var(--success)" : result === "fail" ? "var(--danger)" : result === "warn" ? "#f59e0b" : "var(--border)";
-            const statusIcon = result === "pass" ? " ✓" : result === "fail" ? " ✗" : result === "warn" ? " ⚠" : "";
-            return (
-              <button
-                key={key || "diag"}
-                onClick={onClick}
-                disabled={disabled}
-                style={{
-                  padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8,
-                  border: `1px solid ${result ? statusColor : "var(--border)"}`,
-                  background: result === "pass" ? "rgba(34,197,94,0.08)" : result === "fail" ? "rgba(239,68,68,0.08)" : "var(--surface)",
-                  cursor: disabled ? "not-allowed" : "pointer", color: result ? statusColor : "var(--text)",
-                  display: "flex", alignItems: "center", gap: 4
-                }}
-              >
-                {label}{statusIcon}
+      {activeTab === "diagnostics" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Firestore Access Diagnostics</div>
+            
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+              {[
+                { key: null, label: loading ? "Running..." : "Run Diagnostics", onClick: runDiagnostics, disabled: loading },
+                { key: "readWorkspace", label: "Read Workspace", onClick: testReadWorkspace, disabled: loading },
+                { key: "readSettings", label: "Read Settings", onClick: testReadSettings, disabled: loading },
+                { key: "readContacts", label: "Read Contacts", onClick: testReadContacts, disabled: loading },
+                { key: "writeTestDoc", label: "Write Test Doc", onClick: testWriteTestDoc, disabled: loading },
+              ].map(({ key, label, onClick, disabled }) => {
+                const result = key ? testResults[key] : null;
+                const statusColor = result === "pass" ? "var(--success)" : result === "fail" ? "var(--danger)" : result === "warn" ? "#f59e0b" : "var(--border)";
+                const statusIcon = result === "pass" ? " ✓" : result === "fail" ? " ✗" : result === "warn" ? " ⚠" : "";
+                return (
+                  <button
+                    key={key || "diag"}
+                    onClick={onClick}
+                    disabled={disabled}
+                    style={{
+                      padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8,
+                      border: `1px solid ${result ? statusColor : "var(--border)"}`,
+                      background: result === "pass" ? "rgba(34,197,94,0.08)" : result === "fail" ? "rgba(239,68,68,0.08)" : "var(--surface)",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      color: result ? statusColor : "var(--text)",
+                      display: "flex", alignItems: "center", gap: 4
+                    }}
+                  >
+                    {label}{statusIcon}
+                  </button>
+                );
+              })}
+              <button onClick={repairOwnerAccess} disabled={repairing} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid #ef4444", background: "#fef2f2", cursor: repairing ? "not-allowed" : "pointer" }}>
+                {repairing ? "Repairing..." : "Repair My Owner Access"}
               </button>
-            );
-          })}
-          <button onClick={repairOwnerAccess} disabled={repairing} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid #ef4444", background: "#fef2f2", cursor: repairing ? "not-allowed" : "pointer" }}>
-            {repairing ? "Repairing..." : "Repair My Owner Access"}
-          </button>
-        </div>
-
-        {/* Diagnostic Results */}
-        {diagResults && (
-          <div style={{ background: "var(--background)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, fontSize: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Diagnostic Results:</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8 }}>
-              <div><span style={{ color: "var(--text-muted)" }}>Auth UID:</span> <strong>{diagResults.authUid || "—"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>Auth Email:</span> <strong>{diagResults.authEmail || "—"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>Workspace ID:</span> <strong>{diagResults.workspaceId || "—"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>Workspace Owner ID:</span> <strong>{diagResults.workspaceOwnerId || "—"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>Owner ID Matches:</span> <strong style={{ color: diagResults.ownerIdMatches ? "var(--success)" : "var(--danger)" }}>{diagResults.ownerIdMatches ? "✓ Yes" : "✗ No"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>Member Doc Exists:</span> <strong style={{ color: diagResults.memberExists ? "var(--success)" : "var(--danger)" }}>{diagResults.memberExists ? "✓ Yes" : "✗ No"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>Member Role:</span> <strong>{diagResults.memberRole || "—"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>Member Active:</span> <strong style={{ color: diagResults.memberActive ? "var(--success)" : "var(--danger)" }}>{diagResults.memberActive ? "✓ Yes" : "✗ No"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>In Admin IDs:</span> <strong style={{ color: diagResults.inAdminIds ? "var(--success)" : "var(--text-muted)" }}>{diagResults.inAdminIds ? "✓ Yes" : "No"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>In Staff IDs:</span> <strong style={{ color: diagResults.inStaffIds ? "var(--success)" : "var(--text-muted)" }}>{diagResults.inStaffIds ? "✓ Yes" : "No"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>In Viewer IDs:</span> <strong style={{ color: diagResults.inViewerIds ? "var(--success)" : "var(--text-muted)" }}>{diagResults.inViewerIds ? "✓ Yes" : "No"}</strong></div>
-              <div><span style={{ color: "var(--text-muted)" }}>Rules Mode:</span> <strong>{diagResults.rulesMode}</strong></div>
             </div>
-            {diagResults.error && <div style={{ marginTop: 8, color: "var(--danger)" }}>Error: {diagResults.error}</div>}
-            <div style={{ marginTop: 8, color: "var(--text-muted)" }}>Timestamp: {new Date(diagResults.timestamp).toLocaleString()}</div>
+
+            {diagResults && (
+              <div style={{ background: "var(--background)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, fontSize: 12 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>Diagnostic Results:</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8 }}>
+                  <div><span style={{ color: "var(--text-muted)" }}>Auth UID: </span><strong>{diagResults.authUid || "—"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Auth Email: </span><strong>{diagResults.authEmail || "—"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Workspace ID: </span><strong>{diagResults.workspaceId || "—"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Workspace Owner ID: </span><strong>{diagResults.workspaceOwnerId || "—"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Owner ID Matches: </span><strong style={{ color: diagResults.ownerIdMatches ? "var(--success)" : "var(--danger)" }}>{diagResults.ownerIdMatches ? "✓ Yes" : "✗ No"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Member Doc Exists: </span><strong style={{ color: diagResults.memberExists ? "var(--success)" : "var(--danger)" }}>{diagResults.memberExists ? "✓ Yes" : "✗ No"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Member Role: </span><strong>{diagResults.memberRole || "—"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Member Active: </span><strong style={{ color: diagResults.memberActive ? "var(--success)" : "var(--danger)" }}>{diagResults.memberActive ? "✓ Yes" : "✗ No"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>In Admin IDs: </span><strong style={{ color: diagResults.inAdminIds ? "var(--success)" : "var(--text-muted)" }}>{diagResults.inAdminIds ? "✓ Yes" : "No"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>In Staff IDs: </span><strong style={{ color: diagResults.inStaffIds ? "var(--success)" : "var(--text-muted)" }}>{diagResults.inStaffIds ? "✓ Yes" : "No"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>In Viewer IDs: </span><strong style={{ color: diagResults.inViewerIds ? "var(--success)" : "var(--text-muted)" }}>{diagResults.inViewerIds ? "✓ Yes" : "No"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Rules Mode: </span><strong>{diagResults.rulesMode}</strong></div>
+                </div>
+                {diagResults.error && <div style={{ marginTop: 8, color: "var(--danger)" }}>Error: {diagResults.error}</div>}
+                <div style={{ marginTop: 8, color: "var(--text-muted)" }}>Timestamp: {new Date(diagResults.timestamp).toLocaleString()}</div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>User Management</div>
+            <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>Total users: {userCount !== null ? userCount : "Unknown"}</div>
+            <button onClick={getUserCount} disabled={loading} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: loading ? "not-allowed" : "pointer" }}>
+              {loading ? "Loading..." : "Refresh User Count"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "rules" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Security Rules Export</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              Copy rules to paste into Firebase Console. Firestore rules go to Firestore Database → Rules. RTDB rules go to Realtime Database → Rules.
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button onClick={copyFirestoreRules} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
+                Copy Firestore Rules
+              </button>
+              <button onClick={copyRTDBRules} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
+                Copy RTDB Rules
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "backup" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>Backup & Sync</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              Export your entire workspace data as a JSON file for backup purposes.
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button onClick={exportAllWorkspaceData} disabled={exportingAll} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none", background: "var(--success)", color: "white", cursor: exportingAll ? "not-allowed" : "pointer" }}>
+                {exportingAll ? "Exporting..." : "📥 Export All Workspace Data"}
+              </button>
+              <button onClick={forceSyncAll} disabled={syncingAll} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: syncingAll ? "not-allowed" : "pointer" }}>
+                {syncingAll ? "Syncing..." : "🔄 Force Sync Workspace"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

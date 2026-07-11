@@ -135,3 +135,29 @@
 
   --bg: var(--bg-color);
 }
+
+/* ── Solid mode overrides (Glass UI Disabled) ──────────────────────────── */
+[data-glass="false"] {
+  --glass-blur: none;
+  --glass-bg: #0f172a;
+  --surface: #0f172a;
+  --surface-raised: #1e293b;
+  --surface-overlay: #0f172a;
+  --sidebar-bg: #020617;
+  --modal-bg: #0f172a;
+  --input-bg: #1e293b;
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-border-strong: rgba(255, 255, 255, 0.2);
+}
+
+[data-theme="light"][data-glass="false"] {
+  --glass-bg: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #f8fafc;
+  --surface-overlay: #ffffff;
+  --sidebar-bg: #f8fafc;
+  --modal-bg: #ffffff;
+  --input-bg: #ffffff;
+  --glass-border: rgba(15, 23, 42, 0.12);
+  --glass-border-strong: rgba(15, 23, 42, 0.2);
+}

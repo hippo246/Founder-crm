@@ -137,21 +137,81 @@ export default function AppearanceSection({ settings, setSettings, saveAll }) {
         </FormField>
 
         <FormField label="UI animations" htmlFor="animations-toggle">
-          <label
-            htmlFor="animations-toggle"
-            style={{ display: "flex", alignItems: "center", gap: "var(--space-1, 6px)", cursor: "pointer" }}
-          >
-            <input
-              id="animations-toggle"
-              type="checkbox"
-              checked={settings.enableAnimations}
-              onChange={set("enableAnimations")}
-              style={{ width: 16, height: 16, accentColor: "var(--accent)" }}
-            />
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2, 8px)", justifyContent: "space-between" }}>
             <span style={{ fontSize: "var(--font-size-xs, 12px)", color: "var(--text-muted)" }}>
               Enable animations
             </span>
-          </label>
+            <label
+              htmlFor="animations-toggle"
+              style={{
+                width: 48,
+                height: 24,
+                background: settings.enableAnimations ? "var(--accent)" : "var(--border)",
+                borderRadius: 999,
+                cursor: "pointer",
+                position: "relative",
+                transition: "all 0.2s ease"
+              }}
+            >
+              <div style={{
+                width: 20,
+                height: 20,
+                background: "white",
+                borderRadius: "50%",
+                position: "absolute",
+                top: 2,
+                left: settings.enableAnimations ? 26 : 2,
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+              }} />
+            </label>
+            <input
+              id="animations-toggle"
+              type="checkbox"
+              checked={!!settings.enableAnimations}
+              onChange={set("enableAnimations")}
+              style={{ display: "none" }}
+            />
+          </div>
+        </FormField>
+
+        <FormField label="Glass UI" htmlFor="glass-ui-toggle">
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2, 8px)", justifyContent: "space-between" }}>
+            <span style={{ fontSize: "var(--font-size-xs, 12px)", color: "var(--text-muted)" }}>
+              Enable glass UI effects
+            </span>
+            <label
+              htmlFor="glass-ui-toggle"
+              style={{
+                width: 48,
+                height: 24,
+                background: settings.glassUI !== false ? "var(--accent)" : "var(--border)",
+                borderRadius: 999,
+                cursor: "pointer",
+                position: "relative",
+                transition: "all 0.2s ease"
+              }}
+            >
+              <div style={{
+                width: 20,
+                height: 20,
+                background: "white",
+                borderRadius: "50%",
+                position: "absolute",
+                top: 2,
+                left: settings.glassUI !== false ? 26 : 2,
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+              }} />
+            </label>
+            <input
+              id="glass-ui-toggle"
+              type="checkbox"
+              checked={settings.glassUI !== false}
+              onChange={set("glassUI")}
+              style={{ display: "none" }}
+            />
+          </div>
         </FormField>
 
         <div style={SAVE_ROW_STYLE}>
@@ -192,6 +252,7 @@ export default function AppearanceSection({ settings, setSettings, saveAll }) {
 AppearanceSection.propTypes = {
   settings: PropTypes.shape({
     theme:            PropTypes.oneOf(["dark", "light"]).isRequired,
+    glassUI:          PropTypes.bool,
     defaultTaskView:  PropTypes.oneOf(["Kanban", "My Day", "Inbox", "By Project", "All"]).isRequired,
     defaultPhaseType: PropTypes.oneOf(["Numeric", "Decimal", "Lettered", "Mixed", "Custom"]).isRequired,
     followUpDays:     PropTypes.number.isRequired,

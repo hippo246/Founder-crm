@@ -104,11 +104,7 @@ export default function App() {
   const isDark = settings.theme === "dark";
   const role   = settings.role;
 
-  // ── Theme toggle ───────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const theme = settings.theme || "dark";
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [settings.theme]);
+
 
   const toggleTheme = () => {
     const newTheme = isDark ? "light" : "dark";
@@ -396,7 +392,8 @@ export default function App() {
   // ── Apply theme attribute on <html> ──────────────────────────────────────────
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
-  }, [isDark]);
+    document.documentElement.setAttribute("data-glass", settings.glassUI !== false ? "true" : "false");
+  }, [isDark, settings.glassUI]);
 
   // ── Search data bundle ────────────────────────────────────────────────────────
   const searchData = {
